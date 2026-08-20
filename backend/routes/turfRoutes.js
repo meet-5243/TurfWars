@@ -38,11 +38,9 @@ router.post(
     check('location', 'Location is required').not().isEmpty(),
     check('city', 'City is required').not().isEmpty(),
     check('pricePerHour', 'Price per hour must be a valid number').isNumeric({ min: 0 }),
-    check('sport', 'Sport must be football, cricket, box cricket, or badminton').isIn([
-      'football',
+    check('sport', 'Sport must be cricket or pickle ball').isIn([
       'cricket',
-      'box cricket',
-      'badminton',
+      'pickle ball',
     ]),
     check('capacity', 'Capacity must be a positive integer').isInt({ min: 1 }),
     validate,
@@ -56,9 +54,9 @@ router.put(
     protect,
     requireRole('owner'),
     check('pricePerHour', 'Price per hour must be a valid number').optional().isNumeric({ min: 0 }),
-    check('sport', 'Sport must be football, cricket, box cricket, or badminton')
+    check('sport', 'Sport must be cricket or pickle ball')
       .optional()
-      .isIn(['football', 'cricket', 'box cricket', 'badminton']),
+      .isIn(['cricket', 'pickle ball']),
     check('capacity', 'Capacity must be a positive integer').optional().isInt({ min: 1 }),
     validate,
   ],
