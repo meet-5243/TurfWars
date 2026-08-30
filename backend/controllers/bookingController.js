@@ -172,10 +172,35 @@ const updateBookingStatus = async (req, res) => {
   }
 };
 
+// @desc    Get all active bookings for a turf on a specific date (public)
+// @route   GET /api/bookings/turf/:turfId
+// @access  Public
+const getTurfBookingsByDate = async (req, res) => {
+  const { turfId } = req.params;
+  const { date } = req.query; // format YYYY-MM-DD
+
+  if (!date) {
+    return res.status(400).json({ success: false, message: 'Please provide a date query parameter (YYYY-MM-DD)' });
+  }
+
+  try {
+    const bookings = await Booking.find({
+      turf: turfId,
+      date,
+      bookingStatus: { $ne: 'cancelled' },
+    }).select('startTime endTime bookingStatus');
+
+    return res.json({ success: true, data: bookings });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createBooking,
   getUserBookings,
   getOwnerBookings,
   verifyPayment,
   updateBookingStatus,
+  getTurfBookingsByDate,
 };

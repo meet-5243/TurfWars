@@ -6,6 +6,7 @@ const {
   getOwnerBookings,
   verifyPayment,
   updateBookingStatus,
+  getTurfBookingsByDate,
 } = require('../controllers/bookingController');
 const { protect } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/roleMiddleware');
@@ -20,6 +21,9 @@ const validate = (req, res, next) => {
   }
   next();
 };
+
+// Public route to fetch bookings by turf and date
+router.get('/turf/:turfId', getTurfBookingsByDate);
 
 // User only routes
 router.post(

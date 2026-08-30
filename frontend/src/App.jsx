@@ -12,6 +12,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import TurfDetails from './pages/TurfDetails';
+import BookTurf from './pages/BookTurf';
 import MyBookings from './pages/MyBookings';
 import OwnerDashboard from './pages/OwnerDashboard';
 import OwnerTurfForm from './pages/OwnerTurfForm';
@@ -31,6 +32,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/turfs/:id" element={<TurfDetails />} />
+              <Route path="/turfs/:id/book" element={<BookTurf />} />
 
               {/* Player Protected Routes */}
               <Route

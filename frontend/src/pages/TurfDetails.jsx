@@ -1,35 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { useAuth } from '../context/AuthContext';
-import { MapPin, Users, Calendar, Clock, IndianRupee, Phone, Mail, Award, CheckCircle, Info, ArrowLeft } from 'lucide-react';
+import { MapPin, Users, Calendar, IndianRupee, Phone, Mail, Award, Info, ArrowLeft } from 'lucide-react';
 
 const TurfDetails = () => {
   const { id } = useParams();
-  const navigate = useNavigate();
-  const { isAuthenticated, isOwner, user } = useAuth();
+  const { isOwner } = useAuth();
 
   const [turf, setTurf] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  // Booking states
-  const [date, setDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingError, setBookingError] = useState('');
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-
-  // Time slots for selection
-  const timeSlots = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
-    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00',
-    '22:00', '23:00'
-  ];
-
-  // Calculate today's date string for input min attribute
-  const todayStr = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const fetchTurf = async () => {
@@ -48,78 +29,6 @@ const TurfDetails = () => {
 
     fetchTurf();
   }, [id]);
-
-  // Calculate pricing
-  const getCalculatedPrice = () => {
-    if (!startTime || !endTime || !turf) return 0;
-    const startMins = convertToMins(startTime);
-    const endMins = convertToMins(endTime);
-    if (startMins >= endMins) return 0;
-
-    const hours = (endMins - startMins) / 60;
-    return turf.pricePerHour * hours;
-  };
-
-  const convertToMins = (timeStr) => {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours * 60 + minutes;
-  };
-
-  const handleBooking = async (e) => {
-    e.preventDefault();
-    setBookingError('');
-
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-
-    if (!turf?.isActive) {
-      setBookingError('This turf is currently inactive.');
-      return;
-    }
-
-    const isMaintenanceDay = date && turf?.maintenanceDates?.includes(date);
-    if (isMaintenanceDay) {
-      setBookingError('This turf is under maintenance on the selected date.');
-      return;
-    }
-
-    if (!date || !startTime || !endTime) {
-      setBookingError('Please select a date, start time, and end time.');
-      return;
-    }
-
-    const startMins = convertToMins(startTime);
-    const endMins = convertToMins(endTime);
-
-    if (startMins >= endMins) {
-      setBookingError('End time must be after start time.');
-      return;
-    }
-
-    setBookingLoading(true);
-    try {
-      const res = await axiosInstance.post('/bookings', {
-        turf: id,
-        date,
-        startTime,
-        endTime,
-      });
-
-      if (res.data.success) {
-        setBookingSuccess(true);
-        setTimeout(() => {
-          navigate('/my-bookings');
-        }, 3000);
-      }
-    } catch (err) {
-      console.error('Booking error:', err);
-      setBookingError(err.response?.data?.message || 'Booking overlapping or request failed.');
-    } finally {
-      setBookingLoading(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -145,7 +54,6 @@ const TurfDetails = () => {
   }
 
   const { name, location, city, pricePerHour, sport, capacity, amenities, owner, isActive } = turf;
-  const totalAmount = getCalculatedPrice();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
@@ -240,164 +148,66 @@ const TurfDetails = () => {
           </div>
         </div>
 
-        {/* Right Column: Booking panel */}
+        {/* Right Column: Booking details & CTA */}
         <div className="space-y-6">
-          <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-brand-900/10 shadow-2xl relative">
-            
-            {bookingSuccess ? (
-              <div className="text-center py-10 space-y-4">
-                <div className="inline-flex p-3 bg-brand-950/60 rounded-full border border-brand-800 text-brand-400 animate-pulse">
-                  <CheckCircle className="h-10 w-10" />
-                </div>
-                <h3 className="text-2xl font-bold text-white">Booking Requested!</h3>
-                <p className="text-gray-300 text-sm">
-                  Your slot request has been sent. Please make payment offline. Redirecting you to booking dashboard...
-                </p>
+          <div className="glass-panel rounded-3xl p-6 sm:p-8 border border-brand-900/10 shadow-2xl space-y-6">
+            <h3 className="text-xl font-bold text-white flex items-center">
+              <Calendar className="mr-2 text-brand-500 h-5 w-5" />
+              Book This Ground
+            </h3>
+
+            {/* Price Box */}
+            <div className="p-5 rounded-2xl bg-gray-900/50 border border-gray-800 text-center">
+              <span className="block text-xs text-gray-400 uppercase font-bold tracking-wider mb-1">Rate</span>
+              <span className="text-brand-400 font-black text-3xl flex items-center justify-center">
+                <IndianRupee className="h-6 w-6 text-brand-400" />
+                {pricePerHour} <span className="text-sm font-semibold text-gray-400 ml-1">/ hour</span>
+              </span>
+            </div>
+
+            {/* General Info */}
+            <div className="space-y-3.5 text-sm text-gray-300">
+              <div className="flex justify-between flex-wrap gap-2">
+                <span>Availability</span>
+                <span className="text-emerald-400 font-bold">Open Daily (06:00 - 00:00)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Capacity</span>
+                <span className="text-white font-bold">{capacity} Players</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Sport Category</span>
+                <span className="text-white capitalize font-bold">{sport}</span>
+              </div>
+            </div>
+
+            {/* Action CTA Button */}
+            {!isActive ? (
+              <div className="text-center py-4 px-4 bg-red-950/20 border border-red-900/40 rounded-2xl text-red-400 text-sm">
+                <span>This turf is currently inactive. Bookings are temporarily suspended.</span>
+              </div>
+            ) : isOwner ? (
+              <div className="text-center py-4 px-4 bg-yellow-950/20 border border-yellow-900/40 rounded-2xl text-yellow-400 text-sm">
+                <span>Logged in as <strong>Owner</strong>. Owners cannot book slots.</span>
               </div>
             ) : (
-              <>
-                <h3 className="text-xl font-bold text-white mb-5 flex items-center">
-                  <Calendar className="mr-2 text-brand-500 h-5 w-5" />
-                  Book Your Slot
-                </h3>
-
-                {bookingError && (
-                  <div className="mb-4 bg-red-950/40 border border-red-900/60 rounded-xl p-3 flex items-start space-x-2 text-red-400 text-xs">
-                    <Info className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{bookingError}</span>
-                  </div>
-                )}
-
-                {date && turf?.maintenanceDates?.includes(date) && (
-                  <div className="mb-4 bg-red-950/40 border border-red-900/60 rounded-xl p-3 flex items-start space-x-2 text-red-400 text-xs font-semibold">
-                    <Info className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>This turf is under maintenance on this date. Bookings are disabled.</span>
-                  </div>
-                )}
-
-                {/* Verification/Auth Guards */}
-                {!isActive ? (
-                  <div className="text-center py-6 px-4 bg-red-950/20 border border-red-900/40 rounded-2xl text-red-400 text-sm">
-                    <Info className="h-6 w-6 mx-auto mb-2" />
-                    <span>This turf is currently inactive. Bookings are temporarily suspended.</span>
-                  </div>
-                ) : isOwner ? (
-                  <div className="text-center py-6 px-4 bg-yellow-950/20 border border-yellow-900/40 rounded-2xl text-yellow-400 text-sm">
-                    <Info className="h-6 w-6 mx-auto mb-2" />
-                    <span>You are logged in as a <strong>Turf Owner</strong>. Owners cannot book slots on turfs.</span>
-                  </div>
-                ) : (
-                  <form onSubmit={handleBooking} className="space-y-4">
-                    {/* Date */}
-                    <div>
-                      <label htmlFor="date" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                        Select Date
-                      </label>
-                      <input
-                        type="date"
-                        id="date"
-                        required
-                        min={todayStr}
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="glass-input block w-full px-3 py-3 rounded-xl text-white placeholder-gray-500 text-sm"
-                      />
-                    </div>
-
-                    {/* Start & End Times */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="startTime" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                          Start Time
-                        </label>
-                        <select
-                          id="startTime"
-                          required
-                          value={startTime}
-                          onChange={(e) => setStartTime(e.target.value)}
-                          className="glass-input block w-full px-3 py-3 rounded-xl text-white text-sm cursor-pointer"
-                        >
-                          <option value="">Start</option>
-                          {timeSlots.slice(0, -1).map((time) => (
-                            <option key={time} value={time}>
-                              {time}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label htmlFor="endTime" className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                          End Time
-                        </label>
-                        <select
-                          id="endTime"
-                          required
-                          value={endTime}
-                          onChange={(e) => setEndTime(e.target.value)}
-                          className="glass-input block w-full px-3 py-3 rounded-xl text-white text-sm cursor-pointer"
-                        >
-                          <option value="">End</option>
-                          {timeSlots.map((time) => (
-                            // Only allow times that are greater than start time if start time is selected
-                            (!startTime || convertToMins(time) > convertToMins(startTime)) && (
-                              <option key={time} value={time}>
-                                {time}
-                              </option>
-                            )
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Estimate Box */}
-                    {totalAmount > 0 && (
-                      <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex justify-between items-center mt-6">
-                        <span className="text-sm font-semibold text-gray-300">Total Estimation</span>
-                        <div className="flex items-center text-xl font-black text-brand-400">
-                          <IndianRupee className="h-4.5 w-4.5" />
-                          <span>{totalAmount}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Payment Instruction Notice */}
-                    <div className="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 text-xs text-gray-400 leading-relaxed mt-4 space-y-1">
-                      <div className="flex items-center space-x-1.5 font-bold text-gray-300 mb-1">
-                        <Info className="h-4 w-4 text-brand-400" />
-                        <span>Payment Verification Info</span>
-                      </div>
-                      <p>
-                        Pay the owner directly using Cash or UPI (use owner contact info below). 
-                        Your booking request remains <strong className="text-yellow-400">Pending</strong> until the owner verifies payment.
-                      </p>
-                    </div>
-
-                    {/* Action Button */}
-                    {isAuthenticated ? (
-                      <button
-                        type="submit"
-                        disabled={bookingLoading || !date || !startTime || !endTime || turf?.maintenanceDates?.includes(date)}
-                        className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-xl text-sm font-bold text-white bg-brand-600 hover:bg-brand-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-brand-600/30 transition-all duration-200 mt-6"
-                      >
-                        {bookingLoading ? (
-                          <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                        ) : (
-                          <span>Book Slot Now</span>
-                        )}
-                      </button>
-                    ) : (
-                      <Link
-                        to="/login"
-                        className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-700 hover:border-gray-500 rounded-xl text-sm font-bold text-gray-300 hover:text-white transition-colors duration-200 mt-6 text-center"
-                      >
-                        Login as Player to Book
-                      </Link>
-                    )}
-                  </form>
-                )}
-              </>
+              <Link
+                to={`/turfs/${id}/book`}
+                className="w-full flex justify-center items-center py-4 px-4 border border-transparent rounded-xl text-sm font-extrabold text-white bg-brand-600 hover:bg-brand-500 shadow-lg shadow-brand-600/30 transition-all duration-200 mt-4 text-center"
+              >
+                Book Your Slot Now
+              </Link>
             )}
+
+            <div className="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 text-xs text-gray-400 leading-relaxed space-y-1">
+              <div className="flex items-center space-x-1.5 font-bold text-gray-300 mb-1">
+                <Info className="h-4 w-4 text-brand-400" />
+                <span>How booking works</span>
+              </div>
+              <p>
+                Click above to view the live slot grid, select your preferred date and duration, and confirm your slots instantly.
+              </p>
+            </div>
           </div>
         </div>
       </div>
