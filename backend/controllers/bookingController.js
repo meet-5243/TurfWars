@@ -11,7 +11,7 @@ const timeToMinutes = (timeStr) => {
 // @route   POST /api/bookings
 // @access  Private/User
 const createBooking = async (req, res) => {
-  const { turf: turfId, date, startTime, endTime } = req.body;
+  const { turf: turfId, date, startTime, endTime, bidAmount } = req.body;
 
   try {
     // 1. Find turf
@@ -41,22 +41,96 @@ const createBooking = async (req, res) => {
     }
 
     const hours = (endMins - startMins) / 60;
-    const amount = turf.pricePerHour * hours;
 
-    // 3. Check for overlapping bookings (ignore cancelled bookings)
-    const overlappingBooking = await Booking.findOne({
+    // 3. Check for overlapping bookings (confirmed bookings always block)
+    const confirmedBooking = await Booking.findOne({
       turf: turfId,
       date,
-      bookingStatus: { $ne: 'cancelled' },
+      bookingStatus: 'confirmed',
       startTime: { $lt: endTime },
       endTime: { $gt: startTime },
     });
 
-    if (overlappingBooking) {
+    if (confirmedBooking) {
       return res.status(400).json({
         success: false,
-        message: 'This slot overlaps with an existing booking. Please choose a different date or time.',
+        message: 'This slot is already booked and confirmed. Please choose a different date or time.',
       });
+    }
+
+    // Determine booking mode logic
+    const isAuctionMode = turf.bookingMode === 'auction';
+    let finalAmount = turf.pricePerHour * hours;
+    let finalIsBid = false;
+    let finalBidAmount = 0;
+
+    if (isAuctionMode) {
+      if (bidAmount === undefined || bidAmount === null || isNaN(bidAmount) || bidAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid bid amount per hour.' });
+      }
+
+      const bidRate = Number(bidAmount);
+      
+      // Determine auction type based on selected booking date
+      const bookingDate = new Date(date);
+      const dayOfWeek = bookingDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      const isForwardAuction = [0, 5, 6].includes(dayOfWeek); // Friday, Saturday, Sunday
+
+      if (isForwardAuction) {
+        // Forward Auction: Bid must be >= base rate and higher than current highest bid
+        if (bidRate < turf.pricePerHour) {
+          return res.status(400).json({
+            success: false,
+            message: `In a Friday-Sunday Forward Auction, your bid must be at least the base price of ₹${turf.pricePerHour}/hr.`,
+          });
+        }
+
+        // Find current highest pending bid on this slot
+        const overlappingBids = await Booking.find({
+          turf: turfId,
+          date,
+          bookingStatus: 'pending',
+          startTime: { $lt: endTime },
+          endTime: { $gt: startTime },
+        });
+
+        const currentHighestBid = overlappingBids.reduce((max, b) => Math.max(max, b.bidAmount || 0), 0);
+
+        if (currentHighestBid > 0 && bidRate <= currentHighestBid) {
+          return res.status(400).json({
+            success: false,
+            message: `Your bid must be higher than the current highest bid of ₹${currentHighestBid}/hr on this slot.`,
+          });
+        }
+      } else {
+        // Reverse Auction: Bid must be <= base rate
+        if (bidRate > turf.pricePerHour) {
+          return res.status(400).json({
+            success: false,
+            message: `In a Monday-Thursday Reverse Auction, your bid must be less than or equal to the base price of ₹${turf.pricePerHour}/hr.`,
+          });
+        }
+      }
+
+      finalIsBid = true;
+      finalBidAmount = bidRate;
+      finalAmount = bidRate * hours;
+    } else {
+      // Simple mode: Check for any overlapping pending bookings
+      const pendingBooking = await Booking.findOne({
+        turf: turfId,
+        date,
+        bookingStatus: 'pending',
+        startTime: { $lt: endTime },
+        endTime: { $gt: startTime },
+      });
+
+      if (pendingBooking) {
+        return res.status(400).json({
+          success: false,
+          message: 'This slot has a pending booking request. Please choose a different date or time.',
+        });
+      }
     }
 
     // 4. Create booking
@@ -67,9 +141,11 @@ const createBooking = async (req, res) => {
       date,
       startTime,
       endTime,
-      amount,
+      amount: finalAmount,
       bookingStatus: 'pending',
       paymentStatus: 'unpaid',
+      isBid: finalIsBid,
+      bidAmount: finalBidAmount,
     });
 
     return res.status(201).json({ success: true, data: booking });
@@ -135,20 +211,35 @@ const verifyPayment = async (req, res) => {
 
     await booking.save();
 
+    // Reject all other overlapping pending bookings/bids
+    await Booking.updateMany(
+      {
+        _id: { $ne: booking._id },
+        turf: booking.turf,
+        date: booking.date,
+        bookingStatus: 'pending',
+        startTime: { $lt: booking.endTime },
+        endTime: { $gt: booking.startTime },
+      },
+      {
+        bookingStatus: 'rejected',
+      }
+    );
+
     return res.json({ success: true, data: booking });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Confirm or cancel a booking
+// @desc    Confirm or cancel/reject a booking
 // @route   PATCH /api/bookings/:id/status
 // @access  Private/Owner
 const updateBookingStatus = async (req, res) => {
   const { status } = req.body;
 
-  if (!['confirmed', 'cancelled'].includes(status)) {
-    return res.status(400).json({ success: false, message: 'Invalid status value. Must be confirmed or cancelled.' });
+  if (!['confirmed', 'cancelled', 'rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'Invalid status value. Must be confirmed, cancelled, or rejected.' });
   }
 
   try {
@@ -166,13 +257,30 @@ const updateBookingStatus = async (req, res) => {
     booking.bookingStatus = status;
     await booking.save();
 
+    if (status === 'confirmed') {
+      // Reject all other overlapping pending bookings/bids
+      await Booking.updateMany(
+        {
+          _id: { $ne: booking._id },
+          turf: booking.turf,
+          date: booking.date,
+          bookingStatus: 'pending',
+          startTime: { $lt: booking.endTime },
+          endTime: { $gt: booking.startTime },
+        },
+        {
+          bookingStatus: 'rejected',
+        }
+      );
+    }
+
     return res.json({ success: true, data: booking });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get all active bookings for a turf on a specific date (public)
+// @desc    Get all active bookings/bids for a turf on a specific date (public)
 // @route   GET /api/bookings/turf/:turfId
 // @access  Public
 const getTurfBookingsByDate = async (req, res) => {
@@ -187,8 +295,8 @@ const getTurfBookingsByDate = async (req, res) => {
     const bookings = await Booking.find({
       turf: turfId,
       date,
-      bookingStatus: { $ne: 'cancelled' },
-    }).select('startTime endTime bookingStatus');
+      bookingStatus: { $nin: ['cancelled', 'rejected'] },
+    }).select('startTime endTime bookingStatus isBid bidAmount');
 
     return res.json({ success: true, data: bookings });
   } catch (error) {

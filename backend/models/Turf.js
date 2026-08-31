@@ -52,6 +52,11 @@ const turfSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    bookingMode: {
+      type: String,
+      enum: ['simple', 'auction'],
+      default: 'simple',
+    },
   },
   {
     timestamps: true,

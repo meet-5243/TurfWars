@@ -35,13 +35,21 @@ const bookingSchema = new mongoose.Schema(
     },
     bookingStatus: {
       type: String,
-      enum: ['pending', 'confirmed', 'cancelled'],
+      enum: ['pending', 'confirmed', 'cancelled', 'rejected'],
       default: 'pending',
     },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'paid'],
       default: 'unpaid',
+    },
+    isBid: {
+      type: Boolean,
+      default: false,
+    },
+    bidAmount: {
+      type: Number,
+      default: 0,
     },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -51,6 +59,10 @@ const bookingSchema = new mongoose.Schema(
     verifiedAt: {
       type: Date,
       default: null,
+    },
+    isAutoSelected: {
+      type: Boolean,
+      default: false,
     },
   },
   {

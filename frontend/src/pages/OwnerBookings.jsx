@@ -7,6 +7,7 @@ const OwnerBookings = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [expandedDate, setExpandedDate] = useState(null);
 
   // Filtering states
   const [selectedTurf, setSelectedTurf] = useState('');
@@ -48,12 +49,7 @@ const OwnerBookings = () => {
       const res = await axiosInstance.patch(`/bookings/${bookingId}/verify-payment`);
       if (res.data.success) {
         setSuccess(`Payment for ${user_name}'s booking was marked as PAID and booking confirmed.`);
-        // Update local list state
-        setBookings(
-          bookings.map((b) =>
-            b._id === bookingId ? { ...b, paymentStatus: 'paid', bookingStatus: 'confirmed' } : b
-          )
-        );
+        fetchBookings();
       }
     } catch (err) {
       console.error('Error verifying payment:', err);
@@ -68,9 +64,7 @@ const OwnerBookings = () => {
       const res = await axiosInstance.patch(`/bookings/${bookingId}/status`, { status });
       if (res.data.success) {
         setSuccess(`Booking status for ${user_name} updated to ${status.toUpperCase()}.`);
-        setBookings(
-          bookings.map((b) => (b._id === bookingId ? { ...b, bookingStatus: status } : b))
-        );
+        fetchBookings();
       }
     } catch (err) {
       console.error('Error changing booking status:', err);
@@ -82,6 +76,30 @@ const OwnerBookings = () => {
   const filteredBookings = selectedTurf
     ? bookings.filter((b) => b.turf && b.turf._id === selectedTurf)
     : bookings;
+
+  // Group filtered bookings by date
+  const groupedBookings = filteredBookings.reduce((acc, b) => {
+    const dateKey = b.date;
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+    acc[dateKey].push(b);
+    return acc;
+  }, {});
+
+  // Sort dates: newest dates first
+  const sortedDates = Object.keys(groupedBookings).sort((a, b) => {
+    return new Date(b) - new Date(a);
+  });
+
+  const formattedDate = (dateString) => {
+    try {
+      const d = new Date(dateString);
+      return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+      return dateString;
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
@@ -147,7 +165,7 @@ const OwnerBookings = () => {
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-500 mb-4"></div>
           <span className="text-gray-400">Fetching reservations...</span>
         </div>
-      ) : filteredBookings.length === 0 ? (
+      ) : sortedDates.length === 0 ? (
         <div className="glass-panel text-center p-16 rounded-2xl border border-gray-800 max-w-lg mx-auto flex flex-col items-center">
           <Calendar className="h-12 w-12 text-gray-500 mb-4" />
           <h3 className="text-xl font-bold text-white mb-2">No Bookings Found</h3>
@@ -159,129 +177,229 @@ const OwnerBookings = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {filteredBookings.map((booking) => {
-            const { _id, turf, user: player, date, startTime, endTime, amount, bookingStatus, paymentStatus } = booking;
+          {sortedDates.map((dateStr) => {
+            const dateBookings = groupedBookings[dateStr];
+            const isDateExpanded = expandedDate === dateStr;
+            
+            // Summarize bids/bookings for this date
+            const totalCount = dateBookings.length;
+            const bidCount = dateBookings.filter(b => b.isBid).length;
+            const simpleCount = totalCount - bidCount;
+
             return (
-              <div key={_id} className="glass-panel rounded-2xl p-6 border border-gray-800 flex flex-col lg:flex-row justify-between gap-6 hover:border-gray-700 transition-colors">
-                
-                {/* 1. Ground and Player Details */}
-                <div className="space-y-4 lg:max-w-md w-full">
-                  <div>
-                    <span className="px-2 py-0.5 text-xs font-bold uppercase tracking-wider rounded bg-brand-950 border border-brand-900 text-brand-400">
-                      {turf?.name || 'Deleted Turf'}
-                    </span>
-                    <h3 className="text-lg font-bold text-white tracking-wide mt-2">
-                      Reserved by: {player?.name || 'Unknown User'}
+              <div 
+                key={dateStr}
+                className="glass-panel rounded-2xl border border-gray-850 hover:border-gray-750 transition-all duration-200 overflow-hidden shadow-lg bg-gray-950/20"
+              >
+                {/* Date Summary Card Header */}
+                <div 
+                  onClick={() => setExpandedDate(isDateExpanded ? null : dateStr)}
+                  className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer select-none hover:bg-gray-900/20 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <h3 className="text-xl font-extrabold text-white tracking-wide">
+                      {formattedDate(dateStr)}
                     </h3>
+                    <p className="text-xs text-gray-400 font-semibold flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-brand-500"></span>
+                      <span>{totalCount} Request{totalCount > 1 ? 's' : ''} Active</span>
+                      {bidCount > 0 && <span className="text-cyan-400">({bidCount} Bid{bidCount > 1 ? 's' : ''})</span>}
+                      {simpleCount > 0 && <span className="text-brand-400">({simpleCount} Simple Booking{simpleCount > 1 ? 's' : ''})</span>}
+                    </p>
                   </div>
 
-                  {/* Player contact */}
-                  <div className="space-y-1.5 text-sm text-gray-300 bg-gray-900/40 p-3 rounded-xl border border-gray-800/80">
-                    <div className="flex items-center space-x-2">
-                      <User className="h-4 w-4 text-brand-400 shrink-0" />
-                      <span className="truncate">Name: {player?.name || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Phone className="h-4 w-4 text-brand-400 shrink-0" />
-                      <span>Phone: {player?.phone || 'N/A'}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Mail className="h-4 w-4 text-brand-400 shrink-0" />
-                      <span className="truncate">Email: {player?.email || 'N/A'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Timing and Amount */}
-                <div className="flex flex-col justify-center space-y-3 lg:border-x lg:border-gray-850 lg:px-10 shrink-0">
-                  <div className="space-y-1">
-                    <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Schedule</span>
-                    <div className="flex items-center space-x-1.5 text-gray-300 text-sm">
-                      <Calendar className="h-4 w-4 text-brand-500" />
-                      <span>{date}</span>
-                    </div>
-                    <div className="flex items-center space-x-1.5 text-gray-300 text-sm">
-                      <Clock className="h-4 w-4 text-brand-500" />
-                      <span>{startTime} - {endTime}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Price</span>
-                    <div className="flex items-center text-xl font-black text-white">
-                      <IndianRupee className="h-4.5 w-4.5 text-brand-400" />
-                      <span>{amount}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Badges and Actions */}
-                <div className="flex flex-col justify-between items-start lg:items-end gap-4 min-w-[200px]">
-                  
-                  {/* Status badges */}
-                  <div className="space-y-2 text-right w-full lg:w-auto">
-                    <div className="flex lg:justify-end gap-2 flex-wrap">
-                      {bookingStatus === 'confirmed' ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-green-950/60 text-green-400 border border-green-900/60">
-                          Confirmed
-                        </span>
-                      ) : bookingStatus === 'cancelled' ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-950/60 text-red-400 border border-red-900/60">
-                          Cancelled
-                        </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-brand-400 uppercase bg-brand-950 border border-brand-900 px-3.5 py-1.5 rounded-xl transition-all hover:bg-brand-900 hover:text-white">
+                      {isDateExpanded ? 'Hide Requests' : 'View Requests'}
+                    </span>
+                    <div className="text-gray-500 pl-1">
+                      {isDateExpanded ? (
+                        <svg xmlns="http://www.w3.org/2005/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+                        </svg>
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-950/60 text-yellow-400 border border-yellow-900/60">
-                          Pending Approval
-                        </span>
-                      )}
-
-                      {paymentStatus === 'paid' ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-900/60">
-                          Paid
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-950/60 text-amber-400 border border-amber-900/60">
-                          Unpaid
-                        </span>
+                        <svg xmlns="http://www.w3.org/2005/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Offline payment needs verification.</p>
-                  </div>
-
-                  {/* Actions buttons */}
-                  <div className="flex flex-wrap gap-2 w-full lg:w-auto lg:justify-end">
-                    {paymentStatus === 'unpaid' && (
-                      <button
-                        onClick={() => handleVerifyPayment(_id, player?.name)}
-                        className="flex items-center space-x-1 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-colors"
-                      >
-                        <Check className="h-4 w-4" />
-                        <span>Mark as Paid & Confirm</span>
-                      </button>
-                    )}
-
-                    {bookingStatus === 'pending' && paymentStatus === 'paid' && (
-                      <button
-                        onClick={() => handleStatusChange(_id, 'confirmed', player?.name)}
-                        className="flex items-center space-x-1 px-3.5 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl shadow-md transition-colors"
-                      >
-                        <Check className="h-4 w-4" />
-                        <span>Confirm Slot</span>
-                      </button>
-                    )}
-
-                    {(bookingStatus === 'pending' || bookingStatus === 'confirmed') && (
-                      <button
-                        onClick={() => handleStatusChange(_id, 'cancelled', player?.name)}
-                        className="flex items-center space-x-1 px-3.5 py-2 bg-red-950/50 hover:bg-red-900/40 border border-red-900/50 text-red-400 text-xs font-bold rounded-xl transition-colors"
-                      >
-                        <X className="h-4 w-4" />
-                        <span>Cancel Booking</span>
-                      </button>
-                    )}
                   </div>
                 </div>
 
+                {/* Sub-list of individual Bookings for this Date */}
+                {isDateExpanded && (
+                  <div className="border-t border-gray-900 bg-gray-950/40 p-6 space-y-6">
+                    {dateBookings.map((booking) => {
+                      const { _id, turf, user: player, date: bDate, startTime, endTime, amount, bookingStatus, paymentStatus, isBid, bidAmount, isAutoSelected } = booking;
+                      const bookingDate = new Date(bDate);
+                      const dayOfWeek = bookingDate.getDay();
+                      const isForward = [0, 5, 6].includes(dayOfWeek);
+
+                      return (
+                        <div 
+                          key={_id}
+                          className="bg-gray-900/20 rounded-2xl p-5 border border-gray-850 hover:border-gray-800 transition-colors flex flex-col lg:flex-row justify-between gap-6"
+                        >
+                          {/* 1. Ground Info */}
+                          <div className="space-y-4 lg:max-w-md w-full">
+                            <div>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="px-2 py-0.5 text-xs font-bold uppercase tracking-wider rounded bg-brand-950 border border-brand-900 text-brand-400">
+                                  {turf?.name || 'Deleted Turf'}
+                                </span>
+                                {isBid && (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${isForward ? 'bg-cyan-950 border border-cyan-800 text-cyan-400' : 'bg-pink-950 border border-pink-900 text-pink-400'}`}>
+                                    {isForward ? 'Forward Bid' : 'Reverse Bid'} (₹{bidAmount}/hr)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-1.5 text-gray-300 font-semibold text-sm mt-2">
+                                <Clock className="h-4 w-4 text-brand-500" />
+                                <span>{startTime} - {endTime}</span>
+                              </div>
+                            </div>
+
+                            {/* Player contact */}
+                            <div className="space-y-1.5 text-xs text-gray-300 bg-gray-950/50 p-3 rounded-xl border border-gray-850">
+                              <div className="flex items-center space-x-2">
+                                <User className="h-3.5 w-3.5 text-brand-400 shrink-0" />
+                                <span className="font-semibold text-white">Player: {player?.name || 'N/A'}</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Phone className="h-3.5 w-3.5 text-brand-400 shrink-0" />
+                                <span>Phone: {player?.phone || 'N/A'}</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Mail className="h-3.5 w-3.5 text-brand-400 shrink-0" />
+                                <span className="truncate">Email: {player?.email || 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 2. Amount and Badges */}
+                          <div className="flex flex-col justify-center space-y-3 lg:border-x lg:border-gray-850 lg:px-8 shrink-0">
+                            <div>
+                              <span className="block text-[10px] font-bold text-gray-505 uppercase tracking-wider">
+                                {isBid ? 'Bid Total' : 'Total Price'}
+                              </span>
+                              <div className="flex items-center text-lg font-black text-white">
+                                <IndianRupee className="h-4 w-4 text-brand-400" />
+                                <span>{amount}</span>
+                              </div>
+                            </div>
+
+                             <div className="flex flex-wrap gap-2">
+                               {bookingStatus === 'confirmed' ? (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-green-950/60 text-green-400 border border-green-900/60 uppercase">
+                                   Confirmed
+                                 </span>
+                               ) : bookingStatus === 'cancelled' ? (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-950/60 text-red-400 border border-red-900/60 uppercase">
+                                   Cancelled
+                                 </span>
+                               ) : bookingStatus === 'rejected' ? (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-950/20 text-red-500/80 border border-red-950/40 uppercase">
+                                   Rejected
+                                 </span>
+                               ) : (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-yellow-950/60 text-yellow-400 border border-yellow-900/60 uppercase">
+                                   Pending
+                                 </span>
+                               )}
+
+                               {bookingStatus === 'confirmed' && isAutoSelected && (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-cyan-950 border border-cyan-800 text-cyan-400 uppercase animate-pulse">
+                                   Automatic Selected
+                                 </span>
+                               )}
+
+                              {paymentStatus === 'paid' ? (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-950/60 text-emerald-400 border border-emerald-900/60 uppercase">
+                                  Paid
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-950/60 text-amber-400 border border-amber-900/60 uppercase">
+                                  Unpaid
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* 3. Action Buttons */}
+                          <div className="flex flex-col justify-center items-start lg:items-end gap-2 min-w-[200px]">
+                            <span className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Actions</span>
+                            <div className="flex flex-wrap gap-2 w-full lg:w-auto lg:justify-end">
+                              {paymentStatus === 'unpaid' && bookingStatus !== 'rejected' && bookingStatus !== 'cancelled' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleVerifyPayment(_id, player?.name);
+                                  }}
+                                  className="flex items-center space-x-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-md transition-colors"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>Mark Paid</span>
+                                </button>
+                              )}
+
+                              {bookingStatus === 'pending' && isBid && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(_id, 'confirmed', player?.name);
+                                  }}
+                                  className="flex items-center space-x-1 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-lg shadow-md transition-colors"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>Accept Bid</span>
+                                </button>
+                              )}
+
+                              {bookingStatus === 'pending' && !isBid && paymentStatus === 'paid' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(_id, 'confirmed', player?.name);
+                                  }}
+                                  className="flex items-center space-x-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-lg shadow-md transition-colors"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>Confirm</span>
+                                </button>
+                              )}
+
+                              {(bookingStatus === 'pending' || bookingStatus === 'confirmed') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(_id, 'cancelled', player?.name);
+                                  }}
+                                  className="flex items-center space-x-1 px-3 py-1.5 bg-red-950/50 hover:bg-red-900/40 border border-red-900/50 text-red-400 text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  <span>Cancel</span>
+                                </button>
+                              )}
+
+                              {bookingStatus === 'pending' && isBid && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(_id, 'rejected', player?.name);
+                                  }}
+                                  className="flex items-center space-x-1 px-3 py-1.5 bg-red-950/55 hover:bg-red-900/45 border border-red-900/60 text-red-400 text-xs font-bold rounded-lg transition-colors"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

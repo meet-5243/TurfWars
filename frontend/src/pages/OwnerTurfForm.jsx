@@ -21,13 +21,14 @@ const OwnerTurfForm = () => {
     images: '',    // will be converted from comma-separated string to array
     maintenanceDates: '', // comma-separated YYYY-MM-DD strings
     isActive: true,
+    bookingMode: 'simple',
   });
 
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState('');
 
-  const { name, location, city, pricePerHour, sport, capacity, amenities, images, maintenanceDates, isActive } = formData;
+  const { name, location, city, pricePerHour, sport, capacity, amenities, images, maintenanceDates, isActive, bookingMode } = formData;
 
   useEffect(() => {
     if (isEditMode) {
@@ -55,6 +56,7 @@ const OwnerTurfForm = () => {
               images: turf.images ? turf.images.join(', ') : '',
               maintenanceDates: turf.maintenanceDates ? turf.maintenanceDates.join(', ') : '',
               isActive: turf.isActive !== undefined ? turf.isActive : true,
+              bookingMode: turf.bookingMode || 'simple',
             });
           }
         } catch (err) {
@@ -157,6 +159,7 @@ const OwnerTurfForm = () => {
       images: imagesArray,
       maintenanceDates: maintenanceDatesArray,
       isActive,
+      bookingMode,
     };
 
     setLoading(true);
@@ -379,6 +382,43 @@ const OwnerTurfForm = () => {
               placeholder="e.g. 2026-08-20, 2026-08-22 to 2026-08-25"
             />
             <p className="text-xs text-gray-400 mt-1">Provide individual dates or ranges (e.g. 2026-08-22 to 2026-08-25), separated by commas.</p>
+          </div>
+
+          {/* Booking Mode Radio Group */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-gray-900/40 border border-gray-800 p-5 rounded-2xl gap-4">
+            <div className="max-w-md">
+              <label className="block text-sm font-bold text-white mb-0.5">
+                Booking Mode Configuration
+              </label>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                <span className="font-semibold text-brand-400">Simple:</span> Regular first-come bookings. <br />
+                <span className="font-semibold text-brand-400">Auction:</span> Enables Forward Bids (Fri-Sun) & Reverse Bids (Mon-Thu) where you select the winning player's price.
+              </p>
+            </div>
+            <div className="flex space-x-3 w-full sm:w-auto shrink-0 justify-end">
+              <label className={`flex-1 sm:flex-initial text-center px-4 py-2.5 rounded-xl border cursor-pointer select-none transition-all ${bookingMode === 'simple' ? 'bg-brand-950/80 border-brand-500 text-brand-400' : 'bg-gray-950/40 border-gray-850 text-gray-500 hover:border-gray-800'}`}>
+                <input
+                  type="radio"
+                  name="bookingMode"
+                  value="simple"
+                  checked={bookingMode === 'simple'}
+                  onChange={handleChange}
+                  className="hidden"
+                />
+                <span className="text-xs font-bold uppercase tracking-wider">Simple</span>
+              </label>
+              <label className={`flex-1 sm:flex-initial text-center px-4 py-2.5 rounded-xl border cursor-pointer select-none transition-all ${bookingMode === 'auction' ? 'bg-brand-950/80 border-brand-500 text-brand-400' : 'bg-gray-950/40 border-gray-850 text-gray-500 hover:border-gray-800'}`}>
+                <input
+                  type="radio"
+                  name="bookingMode"
+                  value="auction"
+                  checked={bookingMode === 'auction'}
+                  onChange={handleChange}
+                  className="hidden"
+                />
+                <span className="text-xs font-bold uppercase tracking-wider">Auction</span>
+              </label>
+            </div>
           </div>
 
           {/* Status Visibility Checkbox */}

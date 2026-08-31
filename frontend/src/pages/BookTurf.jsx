@@ -23,6 +23,7 @@ const BookTurf = () => {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [bidAmount, setBidAmount] = useState('');
 
   // Time slots for selection (hourly intervals)
   const hourlySlots = [
@@ -140,6 +141,38 @@ const BookTurf = () => {
     return `${pad(hours)}:${pad(minutes)}`;
   };
 
+  // Get auction details based on the selected date
+  const getAuctionDetails = () => {
+    if (!date) return { isAuction: false };
+    const bookingDate = new Date(date);
+    const dayOfWeek = bookingDate.getDay(); // 0 = Sun, 1 = Mon, ...
+    const isForward = [0, 5, 6].includes(dayOfWeek);
+    return {
+      isAuction: turf?.bookingMode === 'auction',
+      type: isForward ? 'forward' : 'reverse',
+      typeName: isForward ? 'Forward Auction (Fri-Sun)' : 'Reverse Auction (Mon-Thu)',
+      typeDesc: isForward 
+        ? 'Place a bid higher than or equal to the base hourly rate and greater than the current highest bid.' 
+        : 'Place a bid lower than or equal to the base hourly rate.',
+    };
+  };
+
+  // Find the highest pending bid for the currently selected slot time range
+  const getSlotHighestBid = () => {
+    if (!startTime || !endTime || !existingBookings || turf?.bookingMode !== 'auction') return 0;
+    const startMins = convertToMins(startTime);
+    const endMins = getEndTimeMins(endTime);
+
+    const overlapping = existingBookings.filter(b => {
+      if (b.bookingStatus !== 'pending') return false;
+      const bStart = convertToMins(b.startTime);
+      const bEnd = getEndTimeMins(b.endTime);
+      return bStart < endMins && bEnd > startMins;
+    });
+
+    return overlapping.reduce((max, b) => Math.max(max, b.bidAmount || 0), 0);
+  };
+
   // Calculate pricing
   const getCalculatedPrice = () => {
     if (!startTime || !endTime || !turf) return 0;
@@ -148,7 +181,8 @@ const BookTurf = () => {
     if (startMins >= endMins) return 0;
 
     const hours = (endMins - startMins) / 60;
-    return turf.pricePerHour * hours;
+    const rate = turf.bookingMode === 'auction' && bidAmount ? Number(bidAmount) : turf.pricePerHour;
+    return rate * hours;
   };
 
   const getSlotStatus = (slotStart, slotEnd) => {
@@ -196,6 +230,9 @@ const BookTurf = () => {
     const hasOverlap = existingBookings.some(b => {
       const bStart = convertToMins(b.startTime);
       const bEnd = getEndTimeMins(b.endTime);
+      if (turf?.bookingMode === 'auction') {
+        return b.bookingStatus === 'confirmed' && bStart < endMins && bEnd > startMins;
+      }
       return bStart < endMins && bEnd > startMins;
     });
 
@@ -228,11 +265,18 @@ const BookTurf = () => {
     const hasOverlap = existingBookings.some(b => {
       const bStart = convertToMins(b.startTime);
       const bEnd = getEndTimeMins(b.endTime);
+      if (turf?.bookingMode === 'auction') {
+        return b.bookingStatus === 'confirmed' && bStart < endMins && bEnd > startMins;
+      }
       return bStart < endMins && bEnd > startMins;
     });
 
     if (hasOverlap) {
-      setBookingError('Selected duration overlaps with an existing booking. Please choose another start slot or reduce duration.');
+      setBookingError(
+        turf?.bookingMode === 'auction'
+          ? 'Selected duration overlaps with a confirmed booking. Please choose another slot.'
+          : 'Selected duration overlaps with an existing booking. Please choose another start slot or reduce duration.'
+      );
       return;
     }
 
@@ -274,14 +318,45 @@ const BookTurf = () => {
       return;
     }
 
+    let payload = {
+      turf: id,
+      date,
+      startTime,
+      endTime,
+    };
+
+    if (turf?.bookingMode === 'auction') {
+      if (!bidAmount || isNaN(bidAmount) || Number(bidAmount) <= 0) {
+        setBookingError('Please enter a valid bid amount per hour.');
+        return;
+      }
+
+      const bidRate = Number(bidAmount);
+      const auctionDetails = getAuctionDetails();
+
+      if (auctionDetails.type === 'forward') {
+        if (bidRate < turf.pricePerHour) {
+          setBookingError(`Your bid must be at least the base price of ₹${turf.pricePerHour}/hr.`);
+          return;
+        }
+        const highestBid = getSlotHighestBid();
+        if (highestBid > 0 && bidRate <= highestBid) {
+          setBookingError(`Your bid must be higher than the current highest bid of ₹${highestBid}/hr.`);
+          return;
+        }
+      } else {
+        if (bidRate > turf.pricePerHour) {
+          setBookingError(`Your bid must be less than or equal to the base price of ₹${turf.pricePerHour}/hr.`);
+          return;
+        }
+      }
+
+      payload.bidAmount = bidRate;
+    }
+
     setBookingLoading(true);
     try {
-      const res = await axiosInstance.post('/bookings', {
-        turf: id,
-        date,
-        startTime,
-        endTime,
-      });
+      const res = await axiosInstance.post('/bookings', payload);
 
       if (res.data.success) {
         setBookingSuccess(true);
@@ -495,6 +570,21 @@ const BookTurf = () => {
               {date ? (
                 <div className="space-y-6 pt-2">
                   
+                  {/* Mode / Auction Details Alert */}
+                  <div className={`p-4 rounded-2xl border text-xs leading-relaxed flex items-start space-x-3 ${turf?.bookingMode === 'auction' ? 'bg-cyan-950/20 border-cyan-900/65 text-cyan-400' : 'bg-brand-950/20 border-brand-900/60 text-brand-400'}`}>
+                    <Info className="h-4.5 w-4.5 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-extrabold uppercase tracking-wider text-xs mb-1">
+                        {turf?.bookingMode === 'auction' ? getAuctionDetails().typeName : 'Simple Booking Mode'}
+                      </div>
+                      <p className="text-gray-300">
+                        {turf?.bookingMode === 'auction' 
+                          ? getAuctionDetails().typeDesc 
+                          : 'Reserve this slot instantly at the standard flat rate. Subject to owner approval.'}
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Curved stage indicator */}
                   <div className="w-full max-w-md mx-auto text-center relative mt-4">
                     <div className="h-6 border-t-2 border-brand-500/50 rounded-t-[100px] shadow-[0_-15px_30px_-5px_rgba(16,185,129,0.3)]"></div>
@@ -551,7 +641,11 @@ const BookTurf = () => {
                         } else if (status === 'booked') {
                           buttonClasses += "bg-gray-950/40 border-gray-900 text-gray-600 cursor-not-allowed line-through";
                         } else if (status === 'busy') {
-                          buttonClasses += "bg-amber-950/20 border-amber-900/30 text-amber-500/80 cursor-not-allowed";
+                          if (turf?.bookingMode === 'auction') {
+                            buttonClasses += "bg-amber-950/15 border-amber-905/35 hover:border-amber-500 text-amber-400 hover:bg-amber-950/30 active:scale-[0.97] cursor-pointer";
+                          } else {
+                            buttonClasses += "bg-amber-950/20 border-amber-900/30 text-amber-500/80 cursor-not-allowed";
+                          }
                         } else if (!selectable) {
                           buttonClasses += "bg-gray-900/10 border-gray-900/40 text-gray-500 opacity-40 cursor-not-allowed";
                         } else {
@@ -562,7 +656,7 @@ const BookTurf = () => {
                           <button
                             key={slot.start}
                             type="button"
-                            disabled={status === 'booked' || status === 'busy' || (!selectable && !isSelected)}
+                            disabled={status === 'booked' || (status === 'busy' && turf?.bookingMode !== 'auction') || (!selectable && !isSelected)}
                             onClick={() => handleSlotClick(slot.start)}
                             className={buttonClasses}
                           >
@@ -611,12 +705,22 @@ const BookTurf = () => {
 
               <div className="space-y-4 text-sm text-gray-300 py-2">
                 <div className="flex justify-between">
-                  <span>Price per Hour</span>
+                  <span>Base Price per Hour</span>
                   <span className="text-white font-bold flex items-center">
                     <IndianRupee className="h-3.5 w-3.5 mr-0.5" />
                     {pricePerHour}
                   </span>
                 </div>
+
+                {turf?.bookingMode === 'auction' && getAuctionDetails().type === 'forward' && startTime && endTime && (
+                  <div className="flex justify-between text-amber-400 font-semibold">
+                    <span>Current Highest Bid</span>
+                    <span className="flex items-center">
+                      <IndianRupee className="h-3.5 w-3.5 mr-0.5" />
+                      {getSlotHighestBid() || 'No bids yet'}
+                    </span>
+                  </div>
+                )}
 
                 <div className="flex justify-between">
                   <span>Selected Date</span>
@@ -634,10 +738,43 @@ const BookTurf = () => {
                 </div>
               </div>
 
+              {/* Dynamic Bid Input Field */}
+              {turf?.bookingMode === 'auction' && startTime && endTime && (
+                <div className="space-y-2 mt-4 pt-4 border-t border-gray-800">
+                  <label htmlFor="bidAmount" className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    Enter Your Bid per Hour (₹)
+                  </label>
+                  <div className="relative rounded-xl shadow-sm">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                      <IndianRupee className="h-4 w-4" />
+                    </div>
+                    <input
+                      type="number"
+                      id="bidAmount"
+                      required
+                      min="1"
+                      value={bidAmount}
+                      onChange={(e) => setBidAmount(e.target.value)}
+                      className="glass-input block w-full pl-9 pr-3 py-3 rounded-xl text-white placeholder-gray-500 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                      placeholder={getAuctionDetails().type === 'forward' 
+                        ? `e.g. ${Math.max(pricePerHour, getSlotHighestBid() + 100)}` 
+                        : `e.g. ${pricePerHour - 100}`}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 leading-normal">
+                    {getAuctionDetails().type === 'forward' 
+                      ? `Your bid must be >= ₹${pricePerHour}/hr ${getSlotHighestBid() > 0 ? `and strictly higher than ₹${getSlotHighestBid()}/hr` : ''}.`
+                      : `Your bid must be <= ₹${pricePerHour}/hr.`}
+                  </p>
+                </div>
+              )}
+
               {/* Estimate Box */}
               {totalAmount > 0 && (
                 <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex justify-between items-center mt-6">
-                  <span className="text-sm font-semibold text-gray-300">Total Price</span>
+                  <span className="text-sm font-semibold text-gray-300">
+                    {turf?.bookingMode === 'auction' ? 'Total Bid Amount' : 'Total Price'}
+                  </span>
                   <div className="flex items-center text-2xl font-black text-brand-400">
                     <IndianRupee className="h-5 w-5" />
                     <span>{totalAmount}</span>
@@ -653,7 +790,7 @@ const BookTurf = () => {
                 </div>
                 <p>
                   Pay the owner directly using Cash or UPI. 
-                  Your booking remains <strong className="text-yellow-400">Pending</strong> until payment validation.
+                  Your reservation remains <strong className="text-yellow-400">Pending</strong> until payment validation.
                 </p>
               </div>
 
@@ -672,7 +809,7 @@ const BookTurf = () => {
                   {bookingLoading ? (
                     <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
                   ) : (
-                    <span>Confirm Booking</span>
+                    <span>{turf?.bookingMode === 'auction' ? 'Place Bid' : 'Confirm Booking'}</span>
                   )}
                 </button>
               ) : (
