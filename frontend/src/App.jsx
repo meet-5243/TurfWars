@@ -18,6 +18,9 @@ import OwnerDashboard from './pages/OwnerDashboard';
 import OwnerTurfForm from './pages/OwnerTurfForm';
 import OwnerBookings from './pages/OwnerBookings';
 import Profile from './pages/Profile';
+import MembershipDashboard from './pages/MembershipDashboard';
+import AdminMembership from './pages/AdminMembership';
+import RewardsShop from './pages/RewardsShop';
 
 function App() {
   return (
@@ -48,6 +51,22 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/membership"
+                element={
+                  <ProtectedRoute>
+                    <MembershipDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/shop"
+                element={
+                  <ProtectedRoute>
+                    <RewardsShop />
                   </ProtectedRoute>
                 }
               />
@@ -82,6 +101,14 @@ function App() {
                 element={
                   <OwnerRoute>
                     <OwnerBookings />
+                  </OwnerRoute>
+                }
+              />
+              <Route
+                path="/admin/membership"
+                element={
+                  <OwnerRoute>
+                    <AdminMembership />
                   </OwnerRoute>
                 }
               />

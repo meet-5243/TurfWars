@@ -33,6 +33,10 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    originalAmount: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+    couponApplied: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+    pointsRedeemed: { type: Number, default: 0 },
     bookingStatus: {
       type: String,
       enum: ['pending', 'confirmed', 'cancelled', 'rejected'],

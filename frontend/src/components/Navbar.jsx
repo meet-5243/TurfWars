@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy } from 'lucide-react';
+import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy, Gift } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout, isAuthenticated, isOwner } = useAuth();
@@ -56,12 +56,26 @@ const Navbar = () => {
               <>
                 {!isOwner ? (
                   /* Player Links */
-                  <Link to="/my-bookings" className={linkClass('/my-bookings')}>
-                    <span className="flex items-center space-x-1">
-                      <Calendar className="h-4 w-4" />
-                      <span>My Bookings</span>
-                    </span>
-                  </Link>
+                  <>
+                    <Link to="/my-bookings" className={linkClass('/my-bookings')}>
+                      <span className="flex items-center space-x-1">
+                        <Calendar className="h-4 w-4" />
+                        <span>My Bookings</span>
+                      </span>
+                    </Link>
+                    <Link to="/membership" className={linkClass('/membership')}>
+                      <span className="flex items-center space-x-1">
+                        <Trophy className="h-4 w-4" />
+                        <span>Membership</span>
+                      </span>
+                    </Link>
+                    <Link to="/shop" className={linkClass('/shop')}>
+                      <span className="flex items-center space-x-1">
+                        <Gift className="h-4 w-4" />
+                        <span>Rewards</span>
+                      </span>
+                    </Link>
+                  </>
                 ) : (
                   /* Owner Links */
                   <>
@@ -149,13 +163,29 @@ const Navbar = () => {
             {isAuthenticated && (
               <>
                 {!isOwner ? (
-                  <Link
-                    to="/my-bookings"
-                    onClick={() => setIsOpen(false)}
-                    className={mobileLinkClass('/my-bookings')}
-                  >
-                    My Bookings
-                  </Link>
+                  <>
+                    <Link
+                      to="/my-bookings"
+                      onClick={() => setIsOpen(false)}
+                      className={mobileLinkClass('/my-bookings')}
+                    >
+                      My Bookings
+                    </Link>
+                    <Link
+                      to="/membership"
+                      onClick={() => setIsOpen(false)}
+                      className={mobileLinkClass('/membership')}
+                    >
+                      Membership
+                    </Link>
+                    <Link
+                      to="/shop"
+                      onClick={() => setIsOpen(false)}
+                      className={mobileLinkClass('/shop')}
+                    >
+                      Rewards
+                    </Link>
+                  </>
                 ) : (
                   <>
                     <Link

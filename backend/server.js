@@ -8,7 +8,10 @@ const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const authRoutes = require('./routes/authRoutes');
 const turfRoutes = require('./routes/turfRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+const membershipRoutes = require('./routes/membershipRoutes');
+const loyaltyRoutes = require('./routes/loyaltyRoutes');
 const { startAutoSelectionScheduler } = require('./utils/cronScheduler');
+const { startMembershipScheduler } = require('./jobs/membershipJobs');
 
 // Load environment variables
 dotenv.config();
@@ -32,6 +35,8 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/turfs', turfRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/membership', membershipRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
 
 // Test API status
 app.get('/api/health', (req, res) => {
@@ -48,6 +53,8 @@ const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   // Start background auto-selection scheduler
   startAutoSelectionScheduler();
+  // Start membership background scheduler
+  startMembershipScheduler();
 });
 
 // Handle unhandled promise rejections

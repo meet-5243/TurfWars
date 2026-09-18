@@ -24,6 +24,13 @@ const BookTurf = () => {
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bidAmount, setBidAmount] = useState('');
+  
+  // Membership states
+  const [coupons, setCoupons] = useState([]);
+  const [pointsBalance, setPointsBalance] = useState(0);
+  const [selectedCoupon, setSelectedCoupon] = useState('');
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [activeMembership, setActiveMembership] = useState(null);
 
   // Time slots for selection (hourly intervals)
   const hourlySlots = [
@@ -99,7 +106,13 @@ const BookTurf = () => {
     };
 
     fetchTurf();
-  }, [id]);
+    
+    if (isAuthenticated) {
+      axiosInstance.get('/loyalty/coupons').then(res => setCoupons(res.data.data)).catch(console.error);
+      axiosInstance.get('/loyalty/points/balance').then(res => setPointsBalance(res.data.data.balance)).catch(console.error);
+      axiosInstance.get('/membership/current').then(res => setActiveMembership(res.data.data)).catch(console.error);
+    }
+  }, [id, isAuthenticated]);
 
   useEffect(() => {
     if (!date) return;
@@ -173,7 +186,6 @@ const BookTurf = () => {
     return overlapping.reduce((max, b) => Math.max(max, b.bidAmount || 0), 0);
   };
 
-  // Calculate pricing
   const getCalculatedPrice = () => {
     if (!startTime || !endTime || !turf) return 0;
     const startMins = convertToMins(startTime);
@@ -183,6 +195,40 @@ const BookTurf = () => {
     const hours = (endMins - startMins) / 60;
     const rate = turf.bookingMode === 'auction' && bidAmount ? Number(bidAmount) : turf.pricePerHour;
     return rate * hours;
+  };
+
+  const getCalculatedFinalPrice = () => {
+    let price = getCalculatedPrice();
+    if (price === 0) return 0;
+    let totalDiscount = 0;
+
+    if (activeMembership?.plan) {
+      totalDiscount += (price * activeMembership.plan.bookingDiscountPercent) / 100;
+    }
+
+    if (selectedCoupon) {
+      const coupon = coupons.find(c => c.couponCode === selectedCoupon);
+      if (coupon && price >= coupon.minimumBookingAmount) {
+        let cDiscount = 0;
+        if (coupon.discountType === 'PERCENTAGE') {
+          cDiscount = (price * coupon.discountValue) / 100;
+          if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+        } else if (coupon.discountType === 'FIXED_AMOUNT') {
+          cDiscount = coupon.discountValue;
+        } else if (coupon.discountType === 'FREE_BOOKING') {
+          cDiscount = price;
+          if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+        }
+        totalDiscount += cDiscount;
+      }
+    }
+
+    if (pointsToRedeem > 0) {
+      totalDiscount += pointsToRedeem * 0.5;
+    }
+
+    if (totalDiscount > price) totalDiscount = price;
+    return price - totalDiscount;
   };
 
   const getSlotStatus = (slotStart, slotEnd) => {
@@ -323,6 +369,8 @@ const BookTurf = () => {
       date,
       startTime,
       endTime,
+      couponCode: selectedCoupon || undefined,
+      pointsToRedeem: Number(pointsToRedeem) || 0
     };
 
     if (turf?.bookingMode === 'auction') {
@@ -771,13 +819,72 @@ const BookTurf = () => {
 
               {/* Estimate Box */}
               {totalAmount > 0 && (
-                <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex justify-between items-center mt-6">
-                  <span className="text-sm font-semibold text-gray-300">
-                    {turf?.bookingMode === 'auction' ? 'Total Bid Amount' : 'Total Price'}
-                  </span>
-                  <div className="flex items-center text-2xl font-black text-brand-400">
-                    <IndianRupee className="h-5 w-5" />
-                    <span>{totalAmount}</span>
+                <div className="space-y-4 mt-6 border-t border-gray-800 pt-6">
+                  {/* Membership & Loyalty Options */}
+                  {!isOwner && isAuthenticated && (
+                    <div className="space-y-3">
+                      {/* Coupons */}
+                      {coupons.length > 0 && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1">Apply Coupon</label>
+                          <select 
+                            value={selectedCoupon}
+                            onChange={(e) => setSelectedCoupon(e.target.value)}
+                            className="glass-input block w-full px-3 py-2 rounded-lg text-white text-sm bg-gray-900 border-gray-700"
+                          >
+                            <option value="">-- No Coupon --</option>
+                            {coupons.map(c => (
+                              <option key={c._id} value={c.couponCode}>
+                                {c.couponCode} ({c.discountType === 'PERCENTAGE' ? `${c.discountValue}%` : `₹${c.discountValue}`} OFF)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      
+                      {/* Points */}
+                      {pointsBalance > 0 && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1">
+                            Redeem TurfPoints (Balance: {pointsBalance})
+                          </label>
+                          <input 
+                            type="number"
+                            min="0"
+                            max={pointsBalance}
+                            value={pointsToRedeem}
+                            onChange={(e) => {
+                                const val = Number(e.target.value);
+                                if (val <= pointsBalance) setPointsToRedeem(val);
+                            }}
+                            className="glass-input block w-full px-3 py-2 rounded-lg text-white text-sm bg-gray-900 border-gray-700"
+                            placeholder="Points to redeem (1 pt = ₹0.5)"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex flex-col mt-4">
+                    <div className="flex justify-between items-center text-sm text-gray-400 mb-1">
+                      <span>Base Total</span>
+                      <span>₹{totalAmount}</span>
+                    </div>
+                    {totalAmount - getCalculatedFinalPrice() > 0 && (
+                      <div className="flex justify-between items-center text-sm text-green-400 mb-2 font-semibold">
+                        <span>Total Discounts applied</span>
+                        <span>- ₹{(totalAmount - getCalculatedFinalPrice()).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center border-t border-gray-800 pt-2 mt-2">
+                      <span className="text-sm font-bold text-gray-200">
+                        {turf?.bookingMode === 'auction' ? 'Final Bid Amount' : 'Final Price'}
+                      </span>
+                      <div className="flex items-center text-2xl font-black text-brand-400">
+                        <IndianRupee className="h-5 w-5" />
+                        <span>{getCalculatedFinalPrice()}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

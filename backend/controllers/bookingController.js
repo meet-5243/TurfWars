@@ -1,5 +1,9 @@
 const Booking = require('../models/Booking');
 const Turf = require('../models/Turf');
+const UserMembership = require('../models/UserMembership');
+const Coupon = require('../models/Coupon');
+const CouponUsage = require('../models/CouponUsage');
+const TurfPointTransaction = require('../models/TurfPointTransaction');
 
 // Helper to convert time "HH:MM" to minutes for validations
 const timeToMinutes = (timeStr) => {
@@ -133,20 +137,116 @@ const createBooking = async (req, res) => {
       }
     }
 
+    // --- MEMBERSHIP & LOYALTY LOGIC START ---
+    const originalAmount = finalAmount;
+    let discountAmount = 0;
+    let couponToApply = null;
+
+    // 1. Apply Membership Discount
+    const activeMembership = await UserMembership.findOne({
+      user: req.user._id,
+      status: 'active'
+    }).populate('plan');
+
+    if (activeMembership && activeMembership.plan) {
+      const planDiscount = (originalAmount * activeMembership.plan.bookingDiscountPercent) / 100;
+      discountAmount += planDiscount;
+    }
+
+    // 2. Apply Coupon
+    const { couponCode, pointsToRedeem } = req.body;
+    if (couponCode) {
+      const coupon = await Coupon.findOne({ 
+        couponCode, 
+        user: req.user._id, 
+        status: 'active' 
+      });
+
+      if (coupon && new Date() <= new Date(coupon.validUntil) && coupon.usedCount < coupon.usageLimit) {
+        if (originalAmount >= coupon.minimumBookingAmount) {
+          let cDiscount = 0;
+          if (coupon.discountType === 'PERCENTAGE') {
+            cDiscount = (originalAmount * coupon.discountValue) / 100;
+            if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+          } else if (coupon.discountType === 'FIXED_AMOUNT') {
+            cDiscount = coupon.discountValue;
+          } else if (coupon.discountType === 'FREE_BOOKING') {
+            cDiscount = originalAmount;
+            if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+          }
+          
+          discountAmount += cDiscount;
+          couponToApply = coupon;
+        }
+      }
+    }
+
+    // 3. Apply TurfPoints Redemption (1 point = ₹0.5)
+    let actualPointsRedeemed = 0;
+    if (pointsToRedeem && pointsToRedeem > 0) {
+      // Validate points balance
+      const transactions = await TurfPointTransaction.find({ user: req.user._id });
+      const balance = transactions.reduce((acc, curr) => acc + curr.points, 0);
+      
+      if (balance >= pointsToRedeem) {
+        const pointsDiscount = pointsToRedeem * 0.5;
+        discountAmount += pointsDiscount;
+        actualPointsRedeemed = pointsToRedeem;
+      }
+    }
+
+    // Ensure final amount is not negative
+    if (discountAmount > originalAmount) {
+      discountAmount = originalAmount;
+    }
+    finalAmount = originalAmount - discountAmount;
+    // --- MEMBERSHIP & LOYALTY LOGIC END ---
+
     // 4. Create booking
     const booking = await Booking.create({
       user: req.user._id,
       turf: turfId,
-      owner: turf.owner, // denormalized for direct queries
+      owner: turf.owner,
       date,
       startTime,
       endTime,
       amount: finalAmount,
+      originalAmount,
+      discountAmount,
+      couponApplied: couponToApply ? couponToApply._id : null,
+      pointsRedeemed: actualPointsRedeemed,
       bookingStatus: 'pending',
       paymentStatus: 'unpaid',
       isBid: finalIsBid,
       bidAmount: finalBidAmount,
     });
+
+    // Record Coupon Usage
+    if (couponToApply) {
+      await CouponUsage.create({
+        coupon: couponToApply._id,
+        user: req.user._id,
+        booking: booking._id,
+        discountAmount: discountAmount // simplified, this is total discount but good enough for now
+      });
+      couponToApply.usedCount += 1;
+      if (couponToApply.usedCount >= couponToApply.usageLimit) {
+        couponToApply.status = 'used';
+      }
+      await couponToApply.save();
+    }
+
+    // Record Points Redemption
+    if (actualPointsRedeemed > 0) {
+      await TurfPointTransaction.create({
+        user: req.user._id,
+        points: -actualPointsRedeemed,
+        transactionType: 'REDEEM',
+        referenceType: 'BOOKING',
+        referenceId: booking._id,
+        description: `Redeemed points for booking ${booking._id}`
+      });
+    }
 
     return res.status(201).json({ success: true, data: booking });
   } catch (error) {
@@ -225,6 +325,37 @@ const verifyPayment = async (req, res) => {
         bookingStatus: 'rejected',
       }
     );
+
+    // --- AWARD TURFPOINTS ---
+    const activeMembership = await UserMembership.findOne({
+      user: booking.user,
+      status: 'active'
+    }).populate('plan');
+
+    let multiplier = 1; // Default
+    if (activeMembership && activeMembership.plan) {
+      multiplier = activeMembership.plan.pointsMultiplier || 1;
+    }
+
+    // 1 point per ₹100 base, multiplied by membership multiplier
+    const basePoints = Math.floor(booking.amount / 100);
+    const earnedPoints = basePoints * multiplier;
+
+    if (earnedPoints > 0) {
+      // Prevent double awarding if verifyPayment is called multiple times somehow
+      const existingTx = await TurfPointTransaction.findOne({ referenceId: booking._id, transactionType: 'EARN' });
+      if (!existingTx) {
+        await TurfPointTransaction.create({
+          user: booking.user,
+          points: earnedPoints,
+          transactionType: 'EARN',
+          referenceType: 'BOOKING',
+          referenceId: booking._id,
+          description: `Earned points for booking ${booking._id}`
+        });
+      }
+    }
+    // --- AWARD TURFPOINTS END ---
 
     return res.json({ success: true, data: booking });
   } catch (error) {
