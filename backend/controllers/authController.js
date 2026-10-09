@@ -14,12 +14,18 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
+    // Security Fix: Prevent anyone from registering as an admin via public API
+    let assignedRole = 'user'; // default
+    if (role === 'owner' || role === 'user') {
+      assignedRole = role;
+    }
+
     const user = await User.create({
       name,
       email,
       password,
       phone,
-      role,
+      role: assignedRole,
     });
 
     if (user) {

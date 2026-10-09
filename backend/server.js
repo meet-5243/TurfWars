@@ -10,6 +10,8 @@ const turfRoutes = require('./routes/turfRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const membershipRoutes = require('./routes/membershipRoutes');
 const loyaltyRoutes = require('./routes/loyaltyRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const { startAutoSelectionScheduler } = require('./utils/cronScheduler');
 const { startMembershipScheduler } = require('./jobs/membershipJobs');
 
@@ -37,6 +39,8 @@ app.use('/api/turfs', turfRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/membership', membershipRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Test API status
 app.get('/api/health', (req, res) => {
