@@ -7,6 +7,7 @@ const {
   verifyPayment,
   updateBookingStatus,
   getTurfBookingsByDate,
+  getOwnerEarnings,
 } = require('../controllers/bookingController');
 const { protect } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/roleMiddleware');
@@ -44,6 +45,7 @@ router.get('/mine', protect, requireRole('user'), getUserBookings);
 
 // Owner only routes
 router.get('/owner', protect, requireRole('owner'), getOwnerBookings);
+router.get('/owner/earnings', protect, requireRole('owner'), getOwnerEarnings);
 
 router.patch('/:id/verify-payment', protect, requireRole('owner'), verifyPayment);
 

@@ -404,13 +404,81 @@ const BookTurf = () => {
 
     setBookingLoading(true);
     try {
+      // Step 1: Create the Booking in pending state
       const res = await axiosInstance.post('/bookings', payload);
 
       if (res.data.success) {
-        setBookingSuccess(true);
-        setTimeout(() => {
-          navigate('/my-bookings');
-        }, 3000);
+        const bookingId = res.data.data._id;
+        
+        if (turf?.bookingMode === 'auction') {
+          // Do not charge upfront for auction bids. Wait for owner approval.
+          setBookingSuccess(true);
+          setTimeout(() => {
+            navigate('/my-bookings');
+          }, 3000);
+          return;
+        }
+
+        // Step 2: Create Razorpay Order for Instant Bookings
+        const orderRes = await axiosInstance.post('/payments/create-booking-order', { bookingId });
+        
+        if (orderRes.data.success) {
+          const { orderId, amount, currency } = orderRes.data.data;
+          
+          if (!window.Razorpay) {
+            setBookingError('Payment gateway could not be loaded. Please disable adblockers or check your connection.');
+            setBookingLoading(false);
+            return;
+          }
+
+          // Step 3: Open Razorpay Checkout
+          const options = {
+            key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SsI2LJqhZvVWVM', // Enter the Key ID generated from the Dashboard
+            amount: amount.toString(),
+            currency: currency,
+            name: 'TurfWars Booking',
+            description: `Booking for ${turf.name}`,
+            order_id: orderId,
+            handler: async function (response) {
+              try {
+                // Step 4: Verify Payment
+                const verifyRes = await axiosInstance.post('/payments/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  bookingId: bookingId
+                });
+
+                if (verifyRes.data.success) {
+                  setBookingSuccess(true);
+                  setTimeout(() => {
+                    navigate('/my-bookings');
+                  }, 3000);
+                }
+              } catch (verifyErr) {
+                console.error('Payment verification failed:', verifyErr);
+                setBookingError('Payment verification failed. Please contact support.');
+              }
+            },
+            prefill: {
+              name: 'User',
+              email: 'user@example.com',
+              contact: '9999999999'
+            },
+            theme: {
+              color: '#06b6d4'
+            }
+          };
+          
+          const rzp = new window.Razorpay(options);
+          
+          rzp.on('payment.failed', function (response){
+              console.error(response.error);
+              setBookingError('Payment failed. Try again.');
+          });
+          
+          rzp.open();
+        }
       }
     } catch (err) {
       console.error('Booking error:', err);

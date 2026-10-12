@@ -3,10 +3,19 @@ import axiosInstance from '../api/axiosInstance';
 import TurfCard from '../components/TurfCard';
 import { Search, MapPin, Activity, Sparkles, Smile } from 'lucide-react';
 
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+
 const Home = () => {
+  const { isAdmin } = useAuth();
+  
   const [turfs, setTurfs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  if (isAdmin) {
+    return <Navigate to="/admin/settlements" replace />;
+  }
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');

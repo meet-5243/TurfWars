@@ -435,6 +435,39 @@ const getTurfBookingsByDate = async (req, res) => {
   }
 };
 
+// @desc    Get owner earnings (Wallet & History)
+// @route   GET /api/bookings/owner/earnings
+// @access  Private/Owner
+const getOwnerEarnings = async (req, res) => {
+  try {
+    const Settlement = require('../models/Settlement');
+    const settlements = await Settlement.find({ owner: req.user._id })
+      .populate({
+        path: 'booking',
+        populate: [
+          { path: 'turf', select: 'name location' },
+          { path: 'user', select: 'name email phone' }
+        ]
+      })
+      .sort({ createdAt: -1 });
+
+    let totalEarnings = 0;
+    settlements.forEach(s => {
+      totalEarnings += s.amountOwedToOwner || 0;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: settlements,
+      stats: {
+        totalEarnings,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createBooking,
   getUserBookings,
@@ -442,4 +475,5 @@ module.exports = {
   verifyPayment,
   updateBookingStatus,
   getTurfBookingsByDate,
+  getOwnerEarnings,
 };

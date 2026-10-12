@@ -27,6 +27,76 @@ const MyBookings = () => {
     fetchBookings();
   }, []);
 
+  const [paymentLoading, setPaymentLoading] = useState(null);
+
+  const handlePayment = async (bookingId) => {
+    setPaymentLoading(bookingId);
+    setError('');
+    
+    try {
+      const orderRes = await axiosInstance.post('/payments/create-booking-order', { bookingId });
+      
+      if (orderRes.data.success) {
+        const { orderId, amount, currency } = orderRes.data.data;
+        
+        if (!window.Razorpay) {
+          setError('Payment gateway could not be loaded. Please disable adblockers or check your connection.');
+          setPaymentLoading(null);
+          return;
+        }
+
+        const options = {
+          key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SsI2LJqhZvVWVM',
+          amount: amount.toString(),
+          currency: currency,
+          name: 'TurfWars Booking',
+          description: 'Payment for approved turf slot',
+          order_id: orderId,
+          handler: async function (response) {
+            try {
+              const verifyRes = await axiosInstance.post('/payments/verify-payment', {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                bookingId: bookingId
+              });
+
+              if (verifyRes.data.success) {
+                alert('Payment successful! Your booking is now fully confirmed.');
+                fetchBookings(); // Refresh bookings to show Paid status
+              }
+            } catch (err) {
+              console.error('Verification Error:', err);
+              setError('Payment verification failed.');
+            }
+          },
+          prefill: {
+            name: "TurfWars Player",
+            email: "player@turfwars.com",
+            contact: "9999999999"
+          },
+          theme: {
+            color: "#06b6d4"
+          }
+        };
+
+        const rzp = new window.Razorpay(options);
+        
+        rzp.on('payment.failed', function (response){
+            console.error(response.error);
+            setError('Payment failed or was cancelled.');
+        });
+        
+        rzp.open();
+      }
+    } catch (err) {
+      console.error('Error initiating payment:', err);
+      setError(err.response?.data?.message || 'Could not initialize payment gateway.');
+    } finally {
+      setPaymentLoading(null);
+    }
+  };
+
   const getBookingStatusBadge = (status) => {
     switch (status) {
       case 'confirmed':
@@ -304,19 +374,40 @@ const MyBookings = () => {
 
                             {/* Info block to pay owner */}
                             {paymentStatus === 'unpaid' && bookingStatus !== 'cancelled' && bookingStatus !== 'rejected' && (
-                              <div className="p-3.5 rounded-xl bg-gray-900/60 border border-gray-800 text-xs text-gray-400 space-y-1.5">
-                                <span className="font-semibold text-gray-300 block">Offline Payment Instructions:</span>
-                                <p>Contact the owner directly to pay cash or UPI in person/online:</p>
-                                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-brand-400 font-medium">
-                                  <span className="flex items-center">
-                                    👤 {owner?.name || 'Owner'}
-                                  </span>
-                                  {owner?.phone && (
-                                    <span className="flex items-center">
-                                      <Phone className="h-3 w-3 mr-1" /> {owner.phone}
-                                    </span>
-                                  )}
-                                </div>
+                              <div className="p-4 rounded-xl bg-cyan-950/20 border border-cyan-900/40 text-sm text-gray-300 space-y-4">
+                                {bookingStatus === 'confirmed' ? (
+                                  <>
+                                    <div className="flex items-start space-x-3">
+                                      <AlertCircle className="h-5 w-5 text-cyan-400 shrink-0 mt-0.5" />
+                                      <div>
+                                        <span className="font-bold text-cyan-400 block mb-1">Payment Required</span>
+                                        <p className="text-xs text-gray-400 leading-relaxed">Your request is approved! Please pay now via Razorpay to finalize the slot. The platform will automatically route the funds.</p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => handlePayment(_id)}
+                                      disabled={paymentLoading === _id}
+                                      className="w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl shadow-lg transition-all"
+                                    >
+                                      {paymentLoading === _id ? (
+                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                      ) : (
+                                        <>
+                                          <IndianRupee className="h-4 w-4" />
+                                          <span>Pay via Razorpay</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className="flex items-start space-x-3">
+                                    <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+                                    <div>
+                                      <span className="font-bold text-yellow-500 block mb-1">Waiting for Approval</span>
+                                      <p className="text-xs text-gray-400 leading-relaxed">Once the owner accepts your bid/booking, you will be able to pay here via Razorpay.</p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

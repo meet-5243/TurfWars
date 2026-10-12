@@ -34,11 +34,36 @@ exports.getCurrentMembership = async (req, res) => {
 // @access  Private
 exports.purchaseMembership = async (req, res) => {
   try {
-    const { planId } = req.body;
+    const { planId, payFromWallet } = req.body;
     
     const plan = await MembershipPlan.findById(planId);
     if (!plan || plan.status !== 'active') {
       return res.status(404).json({ success: false, message: 'Membership plan not found or inactive' });
+    }
+
+    // Handle wallet payment if requested
+    if (payFromWallet) {
+      const Wallet = require('../models/Wallet');
+      let wallet = await Wallet.findOne({ user: req.user._id });
+      if (!wallet) {
+        wallet = await Wallet.create({ user: req.user._id, balance: 0, transactions: [] });
+      }
+
+      if (wallet.balance < plan.price) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient wallet balance. Please top up your wallet.',
+        });
+      }
+
+      wallet.balance -= plan.price;
+      wallet.transactions.push({
+        type: 'DEBIT',
+        amount: plan.price,
+        description: `Membership Purchase: ${plan.name}`,
+        referenceType: 'MEMBERSHIP',
+      });
+      await wallet.save();
     }
 
     // Check if user already has an active membership

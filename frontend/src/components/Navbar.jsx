@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy, Gift } from 'lucide-react';
+import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy, Gift, Shield, Swords } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout, isAuthenticated, isOwner } = useAuth();
@@ -48,49 +48,74 @@ const Navbar = () => {
 
           {/* Desktop Navigation Links */}
           <div className="hidden md:flex items-center space-x-4">
-            <Link to="/" className={linkClass('/')}>
-              Home
-            </Link>
-
-            {isAuthenticated && (
+            {user?.role === 'admin' ? (
+              /* Admin Links */
+              <Link to="/admin/settlements" className={linkClass('/admin/settlements')}>
+                <span className="flex items-center space-x-1">
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Dashboard</span>
+                </span>
+              </Link>
+            ) : (
+              /* Regular/Owner Links */
               <>
-                {!isOwner ? (
-                  /* Player Links */
+                <Link to="/" className={linkClass('/')}>
+                  Home
+                </Link>
+
+                {isAuthenticated && (
                   <>
-                    <Link to="/my-bookings" className={linkClass('/my-bookings')}>
-                      <span className="flex items-center space-x-1">
-                        <Calendar className="h-4 w-4" />
-                        <span>My Bookings</span>
-                      </span>
-                    </Link>
-                    <Link to="/membership" className={linkClass('/membership')}>
-                      <span className="flex items-center space-x-1">
-                        <Trophy className="h-4 w-4" />
-                        <span>Membership</span>
-                      </span>
-                    </Link>
-                    <Link to="/shop" className={linkClass('/shop')}>
-                      <span className="flex items-center space-x-1">
-                        <Gift className="h-4 w-4" />
-                        <span>Rewards</span>
-                      </span>
-                    </Link>
-                  </>
-                ) : (
-                  /* Owner Links */
-                  <>
-                    <Link to="/owner-dashboard" className={linkClass('/owner-dashboard')}>
-                      <span className="flex items-center space-x-1">
-                        <LayoutDashboard className="h-4 w-4" />
-                        <span>My Turfs</span>
-                      </span>
-                    </Link>
-                    <Link to="/owner-bookings" className={linkClass('/owner-bookings')}>
-                      <span className="flex items-center space-x-1">
-                        <Calendar className="h-4 w-4" />
-                        <span>Manage Bookings</span>
-                      </span>
-                    </Link>
+                    {!isOwner ? (
+                      /* Player Links */
+                      <>
+                        <Link to="/my-bookings" className={linkClass('/my-bookings')}>
+                          <span className="flex items-center space-x-1">
+                            <Calendar className="h-4 w-4" />
+                            <span>My Bookings</span>
+                          </span>
+                        </Link>
+                        <Link to="/membership" className={linkClass('/membership')}>
+                          <span className="flex items-center space-x-1">
+                            <Trophy className="h-4 w-4" />
+                            <span>Membership</span>
+                          </span>
+                        </Link>
+                        <Link to="/shop" className={linkClass('/shop')}>
+                          <span className="flex items-center space-x-1">
+                            <Gift className="h-4 w-4" />
+                            <span>Rewards</span>
+                          </span>
+                        </Link>
+                        <Link to="/teams" className={linkClass('/teams')}>
+                          <span className="flex items-center space-x-1">
+                            <Shield className="h-4 w-4" />
+                            <span>Teams</span>
+                          </span>
+                        </Link>
+                        <Link to="/battles" className={linkClass('/battles')}>
+                          <span className="flex items-center space-x-1 text-red-500 hover:text-red-400">
+                            <Swords className="h-4 w-4" />
+                            <span>Battles</span>
+                          </span>
+                        </Link>
+                      </>
+                    ) : (
+                      /* Owner Links */
+                      <>
+                        <Link to="/owner-dashboard" className={linkClass('/owner-dashboard')}>
+                          <span className="flex items-center space-x-1">
+                            <LayoutDashboard className="h-4 w-4" />
+                            <span>My Turfs</span>
+                          </span>
+                        </Link>
+                        <Link to="/owner-bookings" className={linkClass('/owner-bookings')}>
+                          <span className="flex items-center space-x-1">
+                            <Calendar className="h-4 w-4" />
+                            <span>Manage Bookings</span>
+                          </span>
+                        </Link>
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -152,86 +177,114 @@ const Navbar = () => {
       {isOpen && (
         <div className="md:hidden glass-panel border-t border-gray-800">
           <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-            <Link
-              to="/"
-              onClick={() => setIsOpen(false)}
-              className={mobileLinkClass('/')}
-            >
-              Home
-            </Link>
-
-            {isAuthenticated && (
+            {user?.role === 'admin' ? (
+              <Link
+                to="/admin/settlements"
+                onClick={() => setIsOpen(false)}
+                className={mobileLinkClass('/admin/settlements')}
+              >
+                Dashboard
+              </Link>
+            ) : (
               <>
-                {!isOwner ? (
+                <Link
+                  to="/"
+                  onClick={() => setIsOpen(false)}
+                  className={mobileLinkClass('/')}
+                >
+                  Home
+                </Link>
+
+                {isAuthenticated && (
                   <>
-                    <Link
-                      to="/my-bookings"
-                      onClick={() => setIsOpen(false)}
-                      className={mobileLinkClass('/my-bookings')}
-                    >
-                      My Bookings
-                    </Link>
-                    <Link
-                      to="/membership"
-                      onClick={() => setIsOpen(false)}
-                      className={mobileLinkClass('/membership')}
-                    >
-                      Membership
-                    </Link>
-                    <Link
-                      to="/shop"
-                      onClick={() => setIsOpen(false)}
-                      className={mobileLinkClass('/shop')}
-                    >
-                      Rewards
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Link
-                      to="/owner-dashboard"
-                      onClick={() => setIsOpen(false)}
-                      className={mobileLinkClass('/owner-dashboard')}
-                    >
-                      My Turfs
-                    </Link>
-                    <Link
-                      to="/owner-bookings"
-                      onClick={() => setIsOpen(false)}
-                      className={mobileLinkClass('/owner-bookings')}
-                    >
-                      Manage Bookings
-                    </Link>
+                    {!isOwner ? (
+                      <>
+                        <Link
+                          to="/my-bookings"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/my-bookings')}
+                        >
+                          My Bookings
+                        </Link>
+                        <Link
+                          to="/membership"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/membership')}
+                        >
+                          Membership
+                        </Link>
+                        <Link
+                          to="/shop"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/shop')}
+                        >
+                          Rewards
+                        </Link>
+                        <Link
+                          to="/teams"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/teams')}
+                        >
+                          Teams
+                        </Link>
+                        <Link
+                          to="/battles"
+                          onClick={() => setIsOpen(false)}
+                          className={`${mobileLinkClass('/battles')} text-red-400 font-black`}
+                        >
+                          Battle Board
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <Link
+                          to="/owner-dashboard"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/owner-dashboard')}
+                        >
+                          My Turfs
+                        </Link>
+                        <Link
+                          to="/owner-bookings"
+                          onClick={() => setIsOpen(false)}
+                          className={mobileLinkClass('/owner-bookings')}
+                        >
+                          Manage Bookings
+                        </Link>
+                      </>
+                    )}
                   </>
                 )}
-                
-                {/* User Details display in mobile menu */}
-                <div className="border-t border-gray-800 my-2 pt-2 px-4">
-                  <Link
-                    to="/profile"
-                    onClick={() => setIsOpen(false)}
-                    className="flex items-center space-x-2 py-1 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <User className="h-4 w-4 text-brand-400" />
-                    <span className="text-sm font-semibold text-gray-200">
-                      {user?.name}
-                    </span>
-                    <span className="text-xs text-brand-400 capitalize px-1 py-0.5 rounded bg-brand-950 border border-brand-900">
-                      {user?.role}
-                    </span>
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setIsOpen(false);
-                      handleLogout();
-                    }}
-                    className="w-full mt-2 flex items-center justify-center space-x-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 px-3 py-2 rounded-lg border border-red-900/40 text-sm font-medium transition-colors"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    <span>Logout</span>
-                  </button>
-                </div>
               </>
+            )}
+            
+            {/* User Details display in mobile menu */}
+            {isAuthenticated && (
+              <div className="border-t border-gray-800 my-2 pt-2 px-4">
+                <Link
+                  to="/profile"
+                  onClick={() => setIsOpen(false)}
+                  className="flex items-center space-x-2 py-1 hover:text-white transition-colors cursor-pointer"
+                >
+                  <User className="h-4 w-4 text-brand-400" />
+                  <span className="text-sm font-semibold text-gray-200">
+                    {user?.name}
+                  </span>
+                  <span className="text-xs text-brand-400 capitalize px-1 py-0.5 rounded bg-brand-950 border border-brand-900">
+                    {user?.role}
+                  </span>
+                </Link>
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full mt-2 flex items-center justify-center space-x-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 px-3 py-2 rounded-lg border border-red-900/40 text-sm font-medium transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Logout</span>
+                </button>
+              </div>
             )}
 
             {!isAuthenticated && (

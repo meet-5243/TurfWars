@@ -1,31 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
-import { Plus, Edit2, Trash2, ShieldAlert, Check, X, MapPin, IndianRupee, Eye, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, ShieldAlert, Check, X, MapPin, IndianRupee, Eye, Users, Wallet, CreditCard } from 'lucide-react';
 
 const OwnerDashboard = () => {
   const [turfs, setTurfs] = useState([]);
+  const [earnings, setEarnings] = useState([]);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [activeTab, setActiveTab] = useState('turfs'); // 'turfs' or 'wallet'
   const navigate = useNavigate();
 
-  const fetchOwnerTurfs = async () => {
+  const fetchDashboardData = async () => {
     try {
-      const res = await axiosInstance.get('/turfs/owner/mine');
-      if (res.data.success) {
-        setTurfs(res.data.data);
+      const [turfRes, earnRes] = await Promise.all([
+        axiosInstance.get('/turfs/owner/mine'),
+        axiosInstance.get('/bookings/owner/earnings')
+      ]);
+      
+      if (turfRes.data.success) {
+        setTurfs(turfRes.data.data);
+      }
+      
+      if (earnRes.data.success) {
+        setEarnings(earnRes.data.data);
+        setWalletBalance(earnRes.data.stats.totalEarnings || 0);
       }
     } catch (err) {
-      console.error('Error fetching owner turfs:', err);
-      setError('Failed to fetch your turfs.');
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to fetch dashboard data.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchOwnerTurfs();
+    fetchDashboardData();
   }, []);
 
   const handleDelete = async (id, name) => {
@@ -40,22 +52,17 @@ const OwnerDashboard = () => {
       const res = await axiosInstance.delete(`/turfs/${id}`);
       if (res.data.success) {
         setSuccess(`"${name}" was deleted successfully.`);
-        // Remove from local list
         setTurfs(turfs.filter((t) => t._id !== id));
       }
     } catch (err) {
       console.error('Error deleting turf:', err);
-      // Display the specific validation failure message from backend (e.g., has active bookings)
       setError(err.response?.data?.message || 'Failed to delete turf.');
     }
   };
 
-  // Toggle active status directly
   const toggleStatus = async (id, currentStatus) => {
-    setError('');
-    setSuccess('');
     try {
-      const res = await axiosInstance.put(`/turfs/${id}`, {
+      const res = await axiosInstance.patch(`/turfs/${id}/status`, {
         isActive: !currentStatus,
       });
       if (res.data.success) {
@@ -71,22 +78,46 @@ const OwnerDashboard = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative min-h-[80vh]">
       <div className="bg-mesh"></div>
 
       {/* Header section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Owner Dashboard</h1>
-          <p className="text-gray-400 text-sm mt-1">Manage and track your sports ground listings.</p>
+          <p className="text-gray-400 text-sm mt-1">Manage your grounds and view your earnings.</p>
         </div>
-        <Link
-          to="/owner-turfs/new"
-          className="flex items-center space-x-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-brand-600/25 transition-all duration-200"
+        <div className="flex items-center space-x-3">
+          <Link
+            to="/owner-turfs/new"
+            className="flex items-center space-x-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-brand-600/25 transition-all duration-200"
+          >
+            <Plus className="h-4.5 w-4.5" />
+            <span>Add New Turf</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-1 glass-panel p-1 rounded-xl w-fit mb-8 relative z-10">
+        <button
+          onClick={() => setActiveTab('turfs')}
+          className={`flex items-center px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+            activeTab === 'turfs' ? 'bg-brand-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
         >
-          <Plus className="h-4.5 w-4.5" />
-          <span>Add New Turf</span>
-        </Link>
+          <MapPin className="h-4 w-4 mr-2" />
+          My Turfs
+        </button>
+        <button
+          onClick={() => setActiveTab('wallet')}
+          className={`flex items-center px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+            activeTab === 'wallet' ? 'bg-brand-600 text-white shadow-lg' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Wallet className="h-4 w-4 mr-2" />
+          Wallet & Earnings
+        </button>
       </div>
 
       {/* Notification boxes */}
@@ -106,14 +137,99 @@ const OwnerDashboard = () => {
         </div>
       )}
 
-      {/* Table grid listing */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-500 mb-4"></div>
-          <span className="text-gray-400">Fetching your turfs...</span>
+          <span className="text-gray-400">Loading Dashboard...</span>
+        </div>
+      ) : activeTab === 'wallet' ? (
+        <div className="animate-fadeIn relative z-10">
+          {/* Main Owner Balance Card */}
+          <div className="mb-8 glass-panel p-8 rounded-3xl border border-brand-900/30 flex flex-col md:flex-row md:items-center justify-between relative overflow-hidden bg-gradient-to-br from-brand-950/40 to-gray-900 gap-6">
+            <div className="absolute top-0 right-0 p-8 opacity-5">
+              <Wallet className="h-48 w-48 text-brand-500" />
+            </div>
+            <div className="z-10 flex items-center space-x-6">
+              <div className="p-5 bg-brand-500/20 rounded-2xl">
+                <IndianRupee className="h-10 w-10 text-brand-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">Total Available Balance (95%)</p>
+                <div className="flex items-center text-5xl font-black text-white">
+                  <IndianRupee className="h-8 w-8 mr-1 text-gray-300" />
+                  {walletBalance}
+                </div>
+                <p className="text-sm text-brand-400 mt-2">
+                  Your 95% share of all successful bookings.
+                </p>
+              </div>
+            </div>
+            <button className="z-10 w-full md:w-auto px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl shadow-lg transition-colors flex items-center justify-center">
+              <CreditCard className="h-5 w-5 mr-2" />
+              Withdraw Funds
+            </button>
+          </div>
+
+          <div className="glass-panel rounded-2xl overflow-hidden border border-brand-900/20">
+            <div className="p-6 border-b border-gray-800">
+              <h2 className="text-lg font-bold text-white">Earnings History</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-brand-950/40 border-b border-brand-900/30">
+                    <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider">Turf Booked</th>
+                    <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider">Booked By</th>
+                    <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider">Total Amount</th>
+                    <th className="py-4 px-6 text-xs font-bold text-gray-400 uppercase tracking-wider">Your Earnings (95%)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/50 text-sm">
+                  {earnings.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-12 text-center text-gray-500">
+                        No earnings history found.
+                      </td>
+                    </tr>
+                  ) : (
+                    earnings.map((earning) => (
+                      <tr key={earning._id} className="hover:bg-gray-900/40 transition-colors">
+                        <td className="py-4 px-6 text-gray-300">
+                          {new Date(earning.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="font-bold text-white">
+                            {earning.booking?.turf?.name || 'Unknown Turf'}
+                          </div>
+                        </td>
+                        <td className="py-4 px-6">
+                          <div className="font-bold text-white">
+                            {earning.booking?.user?.name || 'Unknown User'}
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-gray-300">
+                          <div className="flex items-center">
+                            <IndianRupee className="h-3 w-3 mr-1" />
+                            {earning.originalAmount}
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-brand-400 font-bold">
+                          <div className="flex items-center">
+                            <IndianRupee className="h-3 w-3 mr-1" />
+                            {earning.amountOwedToOwner}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : turfs.length === 0 ? (
-        <div className="glass-panel text-center p-16 rounded-2xl border border-gray-800 max-w-lg mx-auto flex flex-col items-center">
+        <div className="animate-fadeIn glass-panel text-center p-16 rounded-2xl border border-gray-800 max-w-lg mx-auto flex flex-col items-center relative z-10">
           <ShieldAlert className="h-12 w-12 text-gray-500 mb-4" />
           <h3 className="text-xl font-bold text-white mb-2">No Turfs Registered</h3>
           <p className="text-gray-400 text-sm mb-6">
@@ -127,7 +243,7 @@ const OwnerDashboard = () => {
           </Link>
         </div>
       ) : (
-        <div className="glass-panel rounded-2xl overflow-hidden border border-gray-800">
+        <div className="animate-fadeIn glass-panel rounded-2xl overflow-hidden border border-gray-800 relative z-10">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-850 text-left">
               <thead className="bg-gray-900/60 text-xs font-bold uppercase tracking-wider text-gray-400">

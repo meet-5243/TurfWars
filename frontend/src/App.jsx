@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import OwnerRoute from './components/OwnerRoute';
+import AdminRoute from './components/AdminRoute';
 
 // Pages
 import Home from './pages/Home';
@@ -18,8 +19,11 @@ import OwnerDashboard from './pages/OwnerDashboard';
 import OwnerTurfForm from './pages/OwnerTurfForm';
 import OwnerBookings from './pages/OwnerBookings';
 import Profile from './pages/Profile';
+import Teams from './pages/Teams';
+import BattleBoard from './pages/BattleBoard';
 import MembershipDashboard from './pages/MembershipDashboard';
 import AdminMembership from './pages/AdminMembership';
+import AdminSettlements from './pages/AdminSettlements';
 import RewardsShop from './pages/RewardsShop';
 
 function App() {
@@ -70,6 +74,22 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/teams"
+                element={
+                  <ProtectedRoute>
+                    <Teams />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/battles"
+                element={
+                  <ProtectedRoute>
+                    <BattleBoard />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Owner Protected Routes */}
               <Route
@@ -107,9 +127,17 @@ function App() {
               <Route
                 path="/admin/membership"
                 element={
-                  <OwnerRoute>
+                  <AdminRoute>
                     <AdminMembership />
-                  </OwnerRoute>
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/settlements"
+                element={
+                  <AdminRoute>
+                    <AdminSettlements />
+                  </AdminRoute>
                 }
               />
             </Routes>
