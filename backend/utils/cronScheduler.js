@@ -1,4 +1,136 @@
 const Booking = require('../models/Booking');
+const Auction = require('../models/Auction');
+const Settlement = require('../models/Settlement');
+const UserMembership = require('../models/UserMembership');
+const TurfPointTransaction = require('../models/TurfPointTransaction');
+const Wallet = require('../models/Wallet');
+
+const settleAuctionItem = async (auction) => {
+  if (!auction || auction.status !== 'active') return null;
+
+  // If there are bids and a leading bidder
+  if (auction.currentLeadingBidder && auction.currentLeadingBid > 0) {
+    const winningAmount = auction.currentLeadingBid;
+    const hourlyRate = auction.currentLeadingBidRate;
+
+    // 1. Create Confirmed & Paid Booking
+    const newBooking = await Booking.create({
+      user: auction.currentLeadingBidder,
+      turf: auction.turf,
+      owner: auction.owner,
+      date: auction.date,
+      startTime: auction.startTime,
+      endTime: auction.endTime,
+      amount: winningAmount,
+      originalAmount: winningAmount,
+      bookingStatus: 'confirmed',
+      paymentStatus: 'paid',
+      isBid: true,
+      bidAmount: hourlyRate,
+      isAutoSelected: true,
+    });
+
+    // 2. Reject all other overlapping pending bookings/bids for that slot
+    await Booking.updateMany(
+      {
+        _id: { $ne: newBooking._id },
+        turf: auction.turf,
+        date: auction.date,
+        bookingStatus: 'pending',
+        startTime: { $lt: auction.endTime },
+        endTime: { $gt: auction.startTime },
+      },
+      { bookingStatus: 'rejected' }
+    );
+
+    // 3. Create Settlement (5% admin, 95% owner)
+    const platformCommission = (winningAmount * 5) / 100;
+    const amountOwedToOwner = winningAmount - platformCommission;
+
+    await Settlement.create({
+      type: 'BOOKING',
+      owner: auction.owner,
+      turf: auction.turf,
+      booking: newBooking._id,
+      bookingAmount: winningAmount,
+      originalAmount: winningAmount,
+      platformCommission,
+      amountOwedToOwner,
+      status: 'pending',
+      payoutNotes: `Live Arena Auction Won (${auction.auctionType} Auction: ₹${hourlyRate}/hr)`,
+    });
+
+    // 4. Update the locked wallet transaction description
+    const winnerWallet = await Wallet.findOne({ user: auction.currentLeadingBidder });
+    if (winnerWallet) {
+      const lockTx = winnerWallet.transactions.find(
+        (t) => t.referenceId && t.referenceId.toString() === auction._id.toString() && t.type === 'DEBIT'
+      );
+      if (lockTx) {
+        lockTx.description = `Auction Won: Confirmed Booking #${newBooking._id}`;
+        lockTx.referenceType = 'BOOKING';
+        lockTx.referenceId = newBooking._id;
+        await winnerWallet.save();
+      }
+    }
+
+    // 5. Award TurfPoints
+    const basePoints = Math.floor(winningAmount / 100);
+    if (basePoints > 0) {
+      let multiplier = 1;
+      const activeMembership = await UserMembership.findOne({
+        user: auction.currentLeadingBidder,
+        turf: auction.turf,
+        status: 'active',
+      }).populate('plan');
+
+      if (activeMembership && activeMembership.plan) {
+        multiplier = activeMembership.plan.pointsMultiplier || 1;
+      }
+
+      await TurfPointTransaction.create({
+        user: auction.currentLeadingBidder,
+        points: basePoints * multiplier,
+        transactionType: 'EARN',
+        referenceType: 'BOOKING',
+        referenceId: newBooking._id,
+        description: `Earned points for winning auction booking ${newBooking._id}`,
+      });
+    }
+
+    // 6. Mark Auction completed
+    auction.status = 'completed';
+    auction.winningBooking = newBooking._id;
+    auction.notes = `Concluded. Won by user ${auction.currentLeadingBidder}`;
+    await auction.save();
+
+    console.log(`[Auction Cron] Auction ${auction._id} concluded! Winner: ${auction.currentLeadingBidder}, Amount: ₹${winningAmount}`);
+    return { success: true, winner: auction.currentLeadingBidder, booking: newBooking._id };
+  } else {
+    // No bids placed
+    auction.status = 'expired';
+    auction.notes = 'Expired with zero bids';
+    await auction.save();
+    console.log(`[Auction Cron] Auction ${auction._id} expired with no bids.`);
+    return { success: true, expired: true };
+  }
+};
+
+const settleExpiredAuctions = async () => {
+  try {
+    const now = new Date();
+    const expiredAuctions = await Auction.find({
+      status: 'active',
+      expiresAt: { $lte: now },
+    });
+
+    for (const auction of expiredAuctions) {
+      await settleAuctionItem(auction);
+    }
+  } catch (error) {
+    console.error('Error settling expired auctions:', error);
+  }
+};
 
 const runAutoSelection = async () => {
   try {
@@ -97,12 +229,18 @@ const runAutoSelection = async () => {
 const startAutoSelectionScheduler = () => {
   // Run once immediately on startup
   runAutoSelection();
-  // Then run every 1 minute
-  setInterval(runAutoSelection, 60 * 1000);
-  console.log('[Auto-Select] Background Scheduler initialized (runs every 1 minute)');
+  settleExpiredAuctions();
+  // Then run every 30 seconds
+  setInterval(() => {
+    runAutoSelection();
+    settleExpiredAuctions();
+  }, 30 * 1000);
+  console.log('[Scheduler] Live Arena & Auto-Selection Scheduler initialized (runs every 30s)');
 };
 
 module.exports = {
   startAutoSelectionScheduler,
-  runAutoSelection
+  runAutoSelection,
+  settleExpiredAuctions,
+  settleAuctionItem,
 };

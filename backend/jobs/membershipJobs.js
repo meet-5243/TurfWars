@@ -1,9 +1,69 @@
 const UserMembership = require('../models/UserMembership');
 const Coupon = require('../models/Coupon');
 const TurfPointTransaction = require('../models/TurfPointTransaction');
+const Settlement = require('../models/Settlement');
+const Wallet = require('../models/Wallet');
 
 const generateMonthlyCoupons = (length = 8) => {
   return Math.random().toString(36).substring(2, length + 2).toUpperCase();
+};
+
+const runMonthlyMembershipPayouts = async () => {
+  try {
+    const now = new Date();
+    // Find membership settlements that are pending monthly payout and reached their maturity date (30 days)
+    const dueSettlements = await Settlement.find({
+      type: 'MEMBERSHIP',
+      status: 'pending_monthly_payout',
+      matureAt: { $lte: now },
+      owner: { $ne: null }
+    }).populate('plan').populate('turf').populate('owner');
+
+    let settledCount = 0;
+    let totalPaidOut = 0;
+
+    for (const settlement of dueSettlements) {
+      if (!settlement.owner) continue;
+
+      const payoutAmount = settlement.amountOwedToOwner || settlement.originalAmount || 0;
+      if (payoutAmount <= 0) continue;
+
+      // Credit the turf owner's wallet
+      let ownerWallet = await Wallet.findOne({ user: settlement.owner._id });
+      if (!ownerWallet) {
+        ownerWallet = await Wallet.create({ user: settlement.owner._id, balance: 0, transactions: [] });
+      }
+
+      ownerWallet.balance += payoutAmount;
+      ownerWallet.transactions.push({
+        type: 'CREDIT',
+        amount: payoutAmount,
+        description: `Monthly Membership Payout: ${settlement.plan?.name || 'Turf Pass'} (${settlement.turf?.name || 'Turf'})`,
+        referenceType: 'PAYOUT',
+        referenceId: settlement._id,
+      });
+      await ownerWallet.save();
+
+      // Mark settlement as settled
+      settlement.status = 'settled';
+      settlement.settledAt = new Date();
+      settlement.payoutNotes = `Settled 100% (₹${payoutAmount}) to owner wallet via automated monthly cron payout`;
+      await settlement.save();
+
+      settledCount++;
+      totalPaidOut += payoutAmount;
+      console.log(`[Settlement Cron] Paid out ₹${payoutAmount} to owner ${settlement.owner.name || settlement.owner._id} for membership settlement ${settlement._id}`);
+    }
+
+    if (settledCount > 0) {
+      console.log(`[Settlement Cron] Processed ${settledCount} monthly membership payouts totaling ₹${totalPaidOut}`);
+    }
+
+    return { success: true, count: settledCount, total: totalPaidOut };
+  } catch (error) {
+    console.error('Error in runMonthlyMembershipPayouts:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 const runMembershipExpiryAndCoupons = async () => {
@@ -20,14 +80,9 @@ const runMembershipExpiryAndCoupons = async () => {
       membership.status = 'expired';
       await membership.save();
       console.log(`[Membership Job] Expired membership ${membership._id} for user ${membership.user}`);
-      // In a real app, send notification here
     }
 
     // 2. Generate monthly coupons
-    // A simplistic approach: If membership is active, and they haven't received coupons for this month...
-    // To simplify for this demo, we'll check if any coupon was created for them in the last 30 days.
-    // Ideally, we track lastCouponDate on UserMembership.
-    
     const activeMemberships = await UserMembership.find({ status: 'active' }).populate('plan');
     
     const thirtyDaysAgo = new Date();
@@ -62,6 +117,9 @@ const runMembershipExpiryAndCoupons = async () => {
       }
     }
 
+    // 3. Process automated monthly membership payouts to turf owners
+    await runMonthlyMembershipPayouts();
+
   } catch (error) {
     console.error('Error in membership job:', error);
   }
@@ -71,12 +129,12 @@ const startMembershipScheduler = () => {
   // Run once on startup
   runMembershipExpiryAndCoupons();
   // Then run every 24 hours (24 * 60 * 60 * 1000)
-  // For testing purposes, you could reduce this.
   setInterval(runMembershipExpiryAndCoupons, 24 * 60 * 60 * 1000);
   console.log('[Membership] Background Scheduler initialized (runs every 24 hours)');
 };
 
 module.exports = {
   startMembershipScheduler,
-  runMembershipExpiryAndCoupons
+  runMembershipExpiryAndCoupons,
+  runMonthlyMembershipPayouts,
 };

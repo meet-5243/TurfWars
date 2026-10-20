@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy, Gift, Shield, Swords } from 'lucide-react';
+import { Menu, X, LogOut, Calendar, LayoutDashboard, User, Trophy, Gift, Shield, Swords, Wallet, IndianRupee, Flame } from 'lucide-react';
+
 
 const Navbar = () => {
-  const { user, logout, isAuthenticated, isOwner } = useAuth();
+  const { user, logout, isAuthenticated, isOwner, walletBalance } = useAuth();
+
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
@@ -61,6 +63,18 @@ const Navbar = () => {
               <>
                 <Link to="/" className={linkClass('/')}>
                   Home
+                </Link>
+
+                <Link
+                  to="/arena"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all border ${
+                    isActive('/arena')
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-500/10'
+                      : 'text-amber-400 hover:text-amber-300 hover:bg-amber-950/30 border-amber-500/30'
+                  }`}
+                >
+                  <Flame className="h-4 w-4 text-amber-400 animate-pulse" />
+                  <span>Live Arena</span>
                 </Link>
 
                 {isAuthenticated && (
@@ -125,8 +139,22 @@ const Navbar = () => {
           {/* Right Side Buttons (Profile / Auth Actions) */}
           <div className="hidden md:flex items-center space-x-4">
             {isAuthenticated ? (
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-3">
+                {!isOwner && user?.role !== 'admin' && (
+                  <Link
+                    to="/wallet"
+                    className="flex items-center space-x-1.5 bg-gradient-to-r from-emerald-950/80 to-gray-900 hover:from-emerald-900/90 hover:to-gray-850 px-3 py-1.5 rounded-lg border border-emerald-800/60 transition-all cursor-pointer group shadow-md"
+                    title="TurfWars Wallet"
+                  >
+                    <Wallet className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-black text-white flex items-center">
+                      <IndianRupee className="h-3 w-3 text-emerald-400" />
+                      {walletBalance}
+                    </span>
+                  </Link>
+                )}
                 <Link to="/profile" className="flex items-center space-x-2 bg-gray-800/80 hover:bg-gray-750/80 px-3 py-1.5 rounded-lg border border-gray-700 transition-colors cursor-pointer">
+
                   <User className="h-4 w-4 text-brand-400" />
                   <span className="text-sm font-semibold text-gray-200">
                     {user?.name}
@@ -195,10 +223,33 @@ const Navbar = () => {
                   Home
                 </Link>
 
+                <Link
+                  to="/arena"
+                  onClick={() => setIsOpen(false)}
+                  className={`${mobileLinkClass('/arena')} flex items-center space-x-2 text-amber-400 font-bold`}
+                >
+                  <Flame className="h-4 w-4 text-amber-400" />
+                  <span>Live Arena 🔥</span>
+                </Link>
+
                 {isAuthenticated && (
                   <>
                     {!isOwner ? (
                       <>
+                        <Link
+                          to="/wallet"
+                          onClick={() => setIsOpen(false)}
+                          className={`${mobileLinkClass('/wallet')} flex items-center justify-between text-emerald-400`}
+                        >
+                          <span className="flex items-center space-x-2">
+                            <Wallet className="h-4 w-4" />
+                            <span>TurfWars Wallet</span>
+                          </span>
+                          <span className="flex items-center text-xs font-black px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-white">
+                            <IndianRupee className="h-3 w-3 text-emerald-400" />
+                            {walletBalance}
+                          </span>
+                        </Link>
                         <Link
                           to="/my-bookings"
                           onClick={() => setIsOpen(false)}
@@ -206,6 +257,7 @@ const Navbar = () => {
                         >
                           My Bookings
                         </Link>
+
                         <Link
                           to="/membership"
                           onClick={() => setIsOpen(false)}

@@ -3,11 +3,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../api/axiosInstance';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, Clock, IndianRupee, Info, CheckCircle, ArrowLeft, Users, Award, MapPin } from 'lucide-react';
+import PaymentModal from '../components/PaymentModal';
 
 const BookTurf = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAuthenticated, isOwner } = useAuth();
+  const { isAuthenticated, isOwner, user, fetchWallet } = useAuth();
+
 
   const [turf, setTurf] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,6 +26,14 @@ const BookTurf = () => {
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bidAmount, setBidAmount] = useState('');
+
+  
+  // Dual Payment Modal states
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingBooking, setPendingBooking] = useState(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+
   
   // Membership states
   const [coupons, setCoupons] = useState([]);
@@ -110,9 +120,10 @@ const BookTurf = () => {
     if (isAuthenticated) {
       axiosInstance.get('/loyalty/coupons').then(res => setCoupons(res.data.data)).catch(console.error);
       axiosInstance.get('/loyalty/points/balance').then(res => setPointsBalance(res.data.data.balance)).catch(console.error);
-      axiosInstance.get('/membership/current').then(res => setActiveMembership(res.data.data)).catch(console.error);
+      axiosInstance.get(`/membership/current?turfId=${id}`).then(res => setActiveMembership(res.data.data)).catch(console.error);
     }
   }, [id, isAuthenticated]);
+
 
   useEffect(() => {
     if (!date) return;
@@ -197,39 +208,41 @@ const BookTurf = () => {
     return rate * hours;
   };
 
-  const getCalculatedFinalPrice = () => {
-    let price = getCalculatedPrice();
-    if (price === 0) return 0;
-    let totalDiscount = 0;
-
-    if (activeMembership?.plan) {
-      totalDiscount += (price * activeMembership.plan.bookingDiscountPercent) / 100;
-    }
-
-    if (selectedCoupon) {
-      const coupon = coupons.find(c => c.couponCode === selectedCoupon);
-      if (coupon && price >= coupon.minimumBookingAmount) {
-        let cDiscount = 0;
-        if (coupon.discountType === 'PERCENTAGE') {
-          cDiscount = (price * coupon.discountValue) / 100;
-          if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
-        } else if (coupon.discountType === 'FIXED_AMOUNT') {
-          cDiscount = coupon.discountValue;
-        } else if (coupon.discountType === 'FREE_BOOKING') {
-          cDiscount = price;
-          if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
-        }
-        totalDiscount += cDiscount;
-      }
-    }
-
-    if (pointsToRedeem > 0) {
-      totalDiscount += pointsToRedeem * 0.5;
-    }
-
-    if (totalDiscount > price) totalDiscount = price;
-    return price - totalDiscount;
+  const getMembershipDiscountAmount = () => {
+    const price = getCalculatedPrice();
+    if (!price || !activeMembership?.plan) return 0;
+    return (price * (activeMembership.plan.bookingDiscountPercent || 0)) / 100;
   };
+
+  const getCouponDiscountAmount = () => {
+    const price = getCalculatedPrice();
+    if (!price || !selectedCoupon) return 0;
+    const coupon = coupons.find(c => c.couponCode === selectedCoupon);
+    if (!coupon || price < coupon.minimumBookingAmount) return 0;
+    let cDiscount = 0;
+    if (coupon.discountType === 'PERCENTAGE') {
+      cDiscount = (price * coupon.discountValue) / 100;
+      if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+    } else if (coupon.discountType === 'FIXED_AMOUNT') {
+      cDiscount = coupon.discountValue;
+    } else if (coupon.discountType === 'FREE_BOOKING') {
+      cDiscount = price;
+      if (coupon.maxDiscount && cDiscount > coupon.maxDiscount) cDiscount = coupon.maxDiscount;
+    }
+    return cDiscount;
+  };
+
+  const getPointsDiscountAmount = () => {
+    return (pointsToRedeem || 0) * 0.5;
+  };
+
+  const getCalculatedFinalPrice = () => {
+    const price = getCalculatedPrice();
+    if (price === 0) return 0;
+    const totalDiscount = getMembershipDiscountAmount() + getCouponDiscountAmount() + getPointsDiscountAmount();
+    return Math.max(0, price - totalDiscount);
+  };
+
 
   const getSlotStatus = (slotStart, slotEnd) => {
     if (date === todayStr) {
@@ -408,8 +421,6 @@ const BookTurf = () => {
       const res = await axiosInstance.post('/bookings', payload);
 
       if (res.data.success) {
-        const bookingId = res.data.data._id;
-        
         if (turf?.bookingMode === 'auction') {
           // Do not charge upfront for auction bids. Wait for owner approval.
           setBookingSuccess(true);
@@ -419,66 +430,10 @@ const BookTurf = () => {
           return;
         }
 
-        // Step 2: Create Razorpay Order for Instant Bookings
-        const orderRes = await axiosInstance.post('/payments/create-booking-order', { bookingId });
-        
-        if (orderRes.data.success) {
-          const { orderId, amount, currency } = orderRes.data.data;
-          
-          if (!window.Razorpay) {
-            setBookingError('Payment gateway could not be loaded. Please disable adblockers or check your connection.');
-            setBookingLoading(false);
-            return;
-          }
-
-          // Step 3: Open Razorpay Checkout
-          const options = {
-            key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SsI2LJqhZvVWVM', // Enter the Key ID generated from the Dashboard
-            amount: amount.toString(),
-            currency: currency,
-            name: 'TurfWars Booking',
-            description: `Booking for ${turf.name}`,
-            order_id: orderId,
-            handler: async function (response) {
-              try {
-                // Step 4: Verify Payment
-                const verifyRes = await axiosInstance.post('/payments/verify-payment', {
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature: response.razorpay_signature,
-                  bookingId: bookingId
-                });
-
-                if (verifyRes.data.success) {
-                  setBookingSuccess(true);
-                  setTimeout(() => {
-                    navigate('/my-bookings');
-                  }, 3000);
-                }
-              } catch (verifyErr) {
-                console.error('Payment verification failed:', verifyErr);
-                setBookingError('Payment verification failed. Please contact support.');
-              }
-            },
-            prefill: {
-              name: 'User',
-              email: 'user@example.com',
-              contact: '9999999999'
-            },
-            theme: {
-              color: '#06b6d4'
-            }
-          };
-          
-          const rzp = new window.Razorpay(options);
-          
-          rzp.on('payment.failed', function (response){
-              console.error(response.error);
-              setBookingError('Payment failed. Try again.');
-          });
-          
-          rzp.open();
-        }
+        // Open Dual Payment Modal (Wallet vs Razorpay)
+        setPendingBooking(res.data.data);
+        setPaymentError('');
+        setShowPaymentModal(true);
       }
     } catch (err) {
       console.error('Booking error:', err);
@@ -487,6 +442,110 @@ const BookTurf = () => {
       setBookingLoading(false);
     }
   };
+
+  const handlePayViaWallet = async () => {
+    if (!pendingBooking) return;
+    setPaymentError('');
+    setPaymentProcessing(true);
+    try {
+      const res = await axiosInstance.post('/payments/pay-booking-from-wallet', {
+        bookingId: pendingBooking._id,
+      });
+
+      if (res.data.success) {
+        setShowPaymentModal(false);
+        setBookingSuccess(true);
+        if (fetchWallet) fetchWallet();
+        setTimeout(() => {
+          navigate('/my-bookings');
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('Wallet payment error:', err);
+      setPaymentError(err.response?.data?.message || 'Wallet payment failed. Please try again.');
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handlePayViaRazorpay = async () => {
+    if (!pendingBooking) return;
+    setPaymentError('');
+    setPaymentProcessing(true);
+
+    try {
+      const orderRes = await axiosInstance.post('/payments/create-booking-order', {
+        bookingId: pendingBooking._id,
+      });
+
+      if (!orderRes.data.success) {
+        throw new Error(orderRes.data.message || 'Failed to create payment order');
+      }
+
+      const { orderId, amount, currency } = orderRes.data.data;
+
+      if (!window.Razorpay) {
+        setPaymentError('Payment gateway could not be loaded. Please disable adblockers or check your connection.');
+        setPaymentProcessing(false);
+        return;
+      }
+
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SsI2LJqhZvVWVM',
+        amount: amount.toString(),
+        currency: currency,
+        name: 'TurfWars Booking',
+        description: `Booking for ${turf?.name || 'Turf'}`,
+        order_id: orderId,
+        handler: async function (response) {
+          try {
+            const verifyRes = await axiosInstance.post('/payments/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              bookingId: pendingBooking._id,
+            });
+
+            if (verifyRes.data.success) {
+              setShowPaymentModal(false);
+              setBookingSuccess(true);
+              if (fetchWallet) fetchWallet();
+              setTimeout(() => {
+                navigate('/my-bookings');
+              }, 2000);
+            }
+          } catch (verifyErr) {
+            console.error('Payment verification failed:', verifyErr);
+            setPaymentError('Payment verification failed. Please contact support.');
+          } finally {
+            setPaymentProcessing(false);
+          }
+        },
+        prefill: {
+          name: user?.name || 'Player',
+          email: user?.email || '',
+          contact: user?.phone || '',
+        },
+        theme: {
+          color: '#10b981',
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        console.error(response.error);
+        setPaymentError('Payment failed or cancelled.');
+        setPaymentProcessing(false);
+      });
+
+      rzp.open();
+    } catch (err) {
+      console.error('Razorpay order creation error:', err);
+      setPaymentError(err.response?.data?.message || err.message || 'Failed to initiate payment.');
+      setPaymentProcessing(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -933,17 +992,51 @@ const BookTurf = () => {
                     </div>
                   )}
 
-                  <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex flex-col mt-4">
-                    <div className="flex justify-between items-center text-sm text-gray-400 mb-1">
+                  <div className="p-4 rounded-xl bg-brand-950/20 border border-brand-900/30 flex flex-col mt-4 space-y-2">
+                    <div className="flex justify-between items-center text-sm text-gray-400">
                       <span>Base Total</span>
                       <span>₹{totalAmount}</span>
                     </div>
-                    {totalAmount - getCalculatedFinalPrice() > 0 && (
-                      <div className="flex justify-between items-center text-sm text-green-400 mb-2 font-semibold">
-                        <span>Total Discounts applied</span>
-                        <span>- ₹{(totalAmount - getCalculatedFinalPrice()).toFixed(2)}</span>
+
+                    {/* Ground Membership Discount */}
+                    {getMembershipDiscountAmount() > 0 && (
+                      <div className="flex justify-between items-center text-xs text-emerald-400 font-semibold bg-emerald-950/40 px-2.5 py-1.5 rounded-lg border border-emerald-900/50">
+                        <span className="flex items-center">
+                          <CheckCircle className="h-3.5 w-3.5 mr-1 text-emerald-400 shrink-0" />
+                          {activeMembership?.plan?.name} Pass Discount (-{activeMembership?.plan?.bookingDiscountPercent}%)
+                        </span>
+                        <span>- ₹{getMembershipDiscountAmount().toFixed(2)}</span>
                       </div>
                     )}
+
+                    {/* Coupon Discount */}
+                    {getCouponDiscountAmount() > 0 && (
+                      <div className="flex justify-between items-center text-xs text-cyan-400 font-semibold">
+                        <span>Coupon ({selectedCoupon})</span>
+                        <span>- ₹{getCouponDiscountAmount().toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {/* TurfPoints Discount */}
+                    {getPointsDiscountAmount() > 0 && (
+                      <div className="flex justify-between items-center text-xs text-yellow-400 font-semibold">
+                        <span>TurfPoints ({pointsToRedeem} pts)</span>
+                        <span>- ₹{getPointsDiscountAmount().toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {/* Prompt to buy ground pass if user has no membership for this turf */}
+                    {!activeMembership && isAuthenticated && !isOwner && (
+                      <div className="pt-1">
+                        <Link
+                          to={`/turfs/${id}`}
+                          className="text-[11px] text-brand-400 hover:text-brand-300 flex items-center underline"
+                        >
+                          Want up to 20% off? Get a {turf?.name} Ground Pass →
+                        </Link>
+                      </div>
+                    )}
+
                     <div className="flex justify-between items-center border-t border-gray-800 pt-2 mt-2">
                       <span className="text-sm font-bold text-gray-200">
                         {turf?.bookingMode === 'auction' ? 'Final Bid Amount' : 'Final Price'}
@@ -964,10 +1057,10 @@ const BookTurf = () => {
                   <span>Payment Information</span>
                 </div>
                 <p>
-                  Pay the owner directly using Cash or UPI. 
-                  Your reservation remains <strong className="text-yellow-400">Pending</strong> until payment validation.
+                  Pay instantly using your <strong className="text-emerald-400">TurfWars Wallet</strong> or directly via <strong className="text-brand-400">Razorpay</strong> (UPI, Card, NetBanking).
                 </p>
               </div>
+
 
               {/* Action Button */}
               {isOwner ? (
@@ -999,8 +1092,26 @@ const BookTurf = () => {
           </div>
         </div>
       )}
+
+      {/* Dual Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setPendingBooking(null);
+        }}
+        title="Complete Booking Payment"
+        subtitle={`Slot Reservation at ${turf?.name || 'Turf'}`}
+        amount={pendingBooking?.amount || 0}
+        onPayViaWallet={handlePayViaWallet}
+        onPayViaRazorpay={handlePayViaRazorpay}
+        isProcessing={paymentProcessing}
+        error={paymentError}
+      />
     </div>
   );
 };
 
 export default BookTurf;
+
+

@@ -5,13 +5,26 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [walletBalance, setWalletBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const fetchWallet = async () => {
+    try {
+      const res = await axiosInstance.get('/wallet');
+      if (res.data.success && res.data.data) {
+        setWalletBalance(res.data.data.balance || 0);
+      }
+    } catch (err) {
+      console.error('Error fetching wallet balance:', err.message);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
       const res = await axiosInstance.get('/auth/profile');
       if (res.data.success) {
         setUser(res.data.data);
+        fetchWallet();
       } else {
         localStorage.removeItem('token');
         setUser(null);
@@ -34,6 +47,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+
   const login = async (email, password) => {
     setLoading(true);
     try {
@@ -47,6 +61,7 @@ export const AuthProvider = ({ children }) => {
           phone: res.data.data.phone,
           role: res.data.data.role,
         });
+        fetchWallet();
         return res.data;
       }
     } catch (err) {
@@ -69,6 +84,7 @@ export const AuthProvider = ({ children }) => {
           phone: res.data.data.phone,
           role: res.data.data.role,
         });
+        fetchWallet();
         return res.data;
       }
     } catch (err) {
@@ -105,6 +121,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
+    setWalletBalance(0);
   };
 
   const isAuthenticated = !!user;
@@ -115,6 +132,8 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider
       value={{
         user,
+        walletBalance,
+        fetchWallet,
         loading,
         login,
         signup,
@@ -129,5 +148,6 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+
 
 export const useAuth = () => useContext(AuthContext);

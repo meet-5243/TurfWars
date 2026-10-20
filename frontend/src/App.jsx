@@ -25,6 +25,8 @@ import MembershipDashboard from './pages/MembershipDashboard';
 import AdminMembership from './pages/AdminMembership';
 import AdminSettlements from './pages/AdminSettlements';
 import RewardsShop from './pages/RewardsShop';
+import WalletPage from './pages/WalletPage';
+import AuctionArena from './pages/AuctionArena';
 
 function App() {
   return (
@@ -40,6 +42,8 @@ function App() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/turfs/:id" element={<TurfDetails />} />
               <Route path="/turfs/:id/book" element={<BookTurf />} />
+              <Route path="/arena" element={<AuctionArena />} />
+              <Route path="/arena/:id" element={<AuctionArena />} />
 
               {/* Player Protected Routes */}
               <Route
@@ -55,6 +59,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Profile />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/wallet"
+                element={
+                  <ProtectedRoute>
+                    <WalletPage />
                   </ProtectedRoute>
                 }
               />

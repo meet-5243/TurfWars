@@ -142,16 +142,27 @@ const createBooking = async (req, res) => {
     let discountAmount = 0;
     let couponToApply = null;
 
-    // 1. Apply Membership Discount
-    const activeMembership = await UserMembership.findOne({
+    // 1. Apply Turf-Specific Membership Discount
+    let activeMembership = await UserMembership.findOne({
       user: req.user._id,
-      status: 'active'
+      turf: turfId,
+      status: 'active',
     }).populate('plan');
 
+    // Fallback to legacy global membership if none for this specific turf
+    if (!activeMembership) {
+      activeMembership = await UserMembership.findOne({
+        user: req.user._id,
+        turf: null,
+        status: 'active',
+      }).populate('plan');
+    }
+
     if (activeMembership && activeMembership.plan) {
-      const planDiscount = (originalAmount * activeMembership.plan.bookingDiscountPercent) / 100;
+      const planDiscount = (originalAmount * (activeMembership.plan.bookingDiscountPercent || 0)) / 100;
       discountAmount += planDiscount;
     }
+
 
     // 2. Apply Coupon
     const { couponCode, pointsToRedeem } = req.body;
@@ -442,26 +453,48 @@ const getOwnerEarnings = async (req, res) => {
   try {
     const Settlement = require('../models/Settlement');
     const settlements = await Settlement.find({ owner: req.user._id })
+      .populate('turf', 'name location city')
+      .populate('plan', 'name price durationDays')
+      .populate({
+        path: 'membership',
+        populate: { path: 'user', select: 'name email phone' },
+      })
       .populate({
         path: 'booking',
         populate: [
-          { path: 'turf', select: 'name location' },
-          { path: 'user', select: 'name email phone' }
-        ]
+          { path: 'turf', select: 'name location city' },
+          { path: 'user', select: 'name email phone' },
+        ],
       })
       .sort({ createdAt: -1 });
 
-    let totalEarnings = 0;
-    settlements.forEach(s => {
-      totalEarnings += s.amountOwedToOwner || 0;
+    let bookingEarnings = 0;
+    let pendingMembershipPayouts = 0;
+    let settledMembershipPayouts = 0;
+
+    settlements.forEach((s) => {
+      if (s.type === 'MEMBERSHIP') {
+        if (s.status === 'pending_monthly_payout') {
+          pendingMembershipPayouts += s.amountOwedToOwner || 0;
+        } else if (s.status === 'settled') {
+          settledMembershipPayouts += s.amountOwedToOwner || 0;
+        }
+      } else {
+        bookingEarnings += s.amountOwedToOwner || 0;
+      }
     });
+
+    const totalEarnings = bookingEarnings + settledMembershipPayouts;
 
     res.status(200).json({
       success: true,
       data: settlements,
       stats: {
         totalEarnings,
-      }
+        bookingEarnings,
+        pendingMembershipPayouts,
+        settledMembershipPayouts,
+      },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

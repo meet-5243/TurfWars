@@ -14,6 +14,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const walletRoutes = require('./routes/walletRoutes');
+const auctionRoutes = require('./routes/auctionRoutes');
 const { startAutoSelectionScheduler } = require('./utils/cronScheduler');
 const { startMembershipScheduler } = require('./jobs/membershipJobs');
 
@@ -46,6 +47,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/matches', require('./routes/matchRoutes'));
 app.use('/api/wallet', walletRoutes);
+app.use('/api/auctions', auctionRoutes);
 
 // Test API status
 app.get('/api/health', (req, res) => {
